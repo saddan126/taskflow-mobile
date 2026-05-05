@@ -285,12 +285,12 @@ export default function TaskDetail() {
             </div>
             {children.map((ch, i) => (
               <div key={ch.id} style={{
-                display:'flex', alignItems:'center', gap:10,
+                display:'flex', alignItems:'flex-start', gap:10,
                 padding:'12px 16px',
                 borderTop: i > 0 ? `1px solid ${C.b1}` : 'none',
               }}>
                 <div style={{
-                  width:18, height:18, borderRadius:'50%', flexShrink:0,
+                  width:18, height:18, borderRadius:'50%', flexShrink:0, marginTop:2,
                   border:`2px solid ${ch.completed ? C.grn : C.b2}`,
                   background: ch.completed ? C.grn : 'transparent',
                   display:'flex', alignItems:'center', justifyContent:'center',
@@ -302,10 +302,20 @@ export default function TaskDetail() {
                     </svg>
                   )}
                 </div>
-                <span style={{ fontSize:14, color: ch.completed ? C.t3 : C.t1,
-                               textDecoration: ch.completed ? 'line-through' : 'none' }}>
-                  {ch.title}
-                </span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <span style={{ fontSize:14, color: ch.completed ? C.t3 : C.t1,
+                                 textDecoration: ch.completed ? 'line-through' : 'none' }}>
+                    {ch.title}
+                  </span>
+                  {ch.detail && (
+                    <div style={{
+                      marginTop:4, fontSize:12, color:C.t3,
+                      lineHeight:1.5, whiteSpace:'pre-wrap',
+                    }}>
+                      {ch.detail}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
