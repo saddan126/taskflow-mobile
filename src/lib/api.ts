@@ -55,7 +55,7 @@ export async function fetchAllData(): Promise<{
 
 // ── Write ─────────────────────────────────────────────────────────────────────
 
-export async function createTask(title: string, categoryId: string | null = null): Promise<string | null> {
+export async function createTask(title: string, categoryId: string | null = null, dueDate?: string | null): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return 'Not logged in'
 
@@ -67,9 +67,10 @@ export async function createTask(title: string, categoryId: string | null = null
     user_id:      user.id,
     title:        title.trim(),
     category_id:  categoryId,
+    due_date:     dueDate ?? null,
     completed:    0,
     starred:      0,
-    manual_order: Date.now(),   // use timestamp as order — simple, always unique
+    manual_order: Date.now(),
     missed_count: 0,
     created_at:   now,
     updated_at:   now,

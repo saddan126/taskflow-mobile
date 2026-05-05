@@ -198,38 +198,43 @@ export default function TaskDetail() {
               </span>
             )}
           </div>
+
+          {/* Detail / notes block */}
+          {task.detail && (
+            <div style={{
+              marginTop:14, background:C.b1, borderRadius:12,
+              padding:'12px', fontSize:14, color:C.t2,
+              lineHeight:1.6, whiteSpace:'pre-wrap',
+            }}>
+              {task.detail}
+            </div>
+          )}
         </div>
 
         {/* Info fields */}
-        <div style={{ background:'#fff', borderRadius:20, overflow:'hidden',
-                      boxShadow:'0 1px 4px rgba(0,0,0,.06)', marginBottom:12 }}>
+        {(category || (task.due_date && due)) && (
+          <div style={{ background:'#fff', borderRadius:20, overflow:'hidden',
+                        boxShadow:'0 1px 4px rgba(0,0,0,.06)', marginBottom:12 }}>
 
-          {category && (
-            <InfoRow icon="🏷" label="分類">
-              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={{ width:8, height:8, borderRadius:'50%', background:category.color }} />
-                <span style={{ fontSize:15, fontWeight:500, color:C.t1 }}>{category.name}</span>
-              </span>
-            </InfoRow>
-          )}
+            {category && (
+              <InfoRow icon="🏷" label="分類" last={!(task.due_date && due)}>
+                <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:category.color }} />
+                  <span style={{ fontSize:15, fontWeight:500, color:C.t1 }}>{category.name}</span>
+                </span>
+              </InfoRow>
+            )}
 
-          {task.due_date && due && (
-            <InfoRow icon="📅" label="到期日">
-              <span style={{ fontSize:13, fontWeight:700, padding:'3px 10px', borderRadius:99,
-                             background:due.bg, color:due.fg }}>
-                {task.due_date} &nbsp;·&nbsp; {due.text}
-              </span>
-            </InfoRow>
-          )}
-
-          {task.detail && (
-            <InfoRow icon="📝" label="備註" last>
-              <p style={{ fontSize:15, color:C.t2, lineHeight:1.6, whiteSpace:'pre-wrap' }}>
-                {task.detail}
-              </p>
-            </InfoRow>
-          )}
-        </div>
+            {task.due_date && due && (
+              <InfoRow icon="📅" label="到期日" last>
+                <span style={{ fontSize:13, fontWeight:700, padding:'3px 10px', borderRadius:99,
+                               background:due.bg, color:due.fg }}>
+                  {task.due_date} &nbsp;·&nbsp; {due.text}
+                </span>
+              </InfoRow>
+            )}
+          </div>
+        )}
 
         {/* Prerequisites */}
         {prereqs.length > 0 && (

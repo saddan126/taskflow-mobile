@@ -11,11 +11,13 @@ const C = {
 export default function Capture() {
   const [input, setInput]       = useState('')
   const [catId, setCatId]       = useState<string>('')
+  const [dueDate, setDueDate]   = useState<string>('')
   const [showCats, setShowCats] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [saved, setSaved]       = useState<string | null>(null)  // last saved title
   const [error, setError]       = useState<string | null>(null)
   const inputRef                = useRef<HTMLTextAreaElement>(null)
+  const dateRef                 = useRef<HTMLInputElement>(null)
 
   const { categories } = useCategories()
   const { createTask }  = useTasks()
@@ -26,9 +28,10 @@ export default function Capture() {
     if (!input.trim() || saving) return
     setSaving(true); setError(null)
     try {
-      await createTask(input.trim(), catId || null)
+      await createTask(input.trim(), catId || null, dueDate || null)
       setSaved(input.trim())
       setInput('')
+      setDueDate('')
       setTimeout(() => setSaved(null), 2500)
       inputRef.current?.focus()
     } catch (e: any) {
@@ -98,6 +101,47 @@ export default function Capture() {
                 : <><span style={{ fontSize:15 }}>＋</span>分類</>
               }
             </button>
+
+            {/* Hidden date input */}
+            <input
+              ref={dateRef}
+              type="date"
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+              style={{ position:'absolute', width:1, height:1, opacity:0, pointerEvents:'none' }}
+            />
+
+            {/* Date pill */}
+            <button
+              onClick={() => {
+                try { (dateRef.current as any)?.showPicker() } catch { dateRef.current?.click() }
+              }}
+              style={{
+                display:'flex', alignItems:'center', gap:5,
+                padding:'6px 12px', borderRadius:99,
+                border:`1.5px solid ${dueDate ? '#ea580c66' : C.b2}`,
+                background: dueDate ? '#fff7ed' : '#fff',
+                color: dueDate ? '#ea580c' : C.t3,
+                fontSize:13, fontWeight:600, cursor:'pointer',
+              }}
+            >
+              {dueDate
+                ? `${parseInt(dueDate.slice(5,7))}/${parseInt(dueDate.slice(8,10))}`
+                : '📅 日期'
+              }
+            </button>
+
+            {/* Clear date */}
+            {dueDate && (
+              <button
+                onClick={() => setDueDate('')}
+                style={{
+                  background:'none', border:'none', cursor:'pointer',
+                  color:C.t3, fontSize:15, padding:'0 2px', lineHeight:1,
+                  marginLeft:-4,
+                }}
+              >✕</button>
+            )}
 
             <div style={{ flex:1 }} />
 

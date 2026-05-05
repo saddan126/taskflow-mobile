@@ -126,7 +126,7 @@ function LoginScreen({ onLogin }: { onLogin: (s: Session) => void }) {
           </svg>
         </div>
         <h1 style={{ fontSize:28, fontWeight:800, color:C.t1, letterSpacing:'-0.03em' }}>
-          TaskFlow
+          Liana
         </h1>
         <p style={{ fontSize:14, color:C.t3, marginTop:6 }}>登入以同步你的任務</p>
       </div>

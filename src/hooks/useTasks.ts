@@ -62,7 +62,7 @@ export function useTasks(categoryId?: string) {
     // No need to reload — optimistic is fine for a simple toggle
   }
 
-  const createTask = async (title: string, catId: string | null) => {
+  const createTask = async (title: string, catId: string | null, dueDate?: string | null) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
@@ -71,7 +71,7 @@ export function useTasks(categoryId?: string) {
     const newTask: Partial<Task> = {
       id, title: title.trim(),
       category_id: catId, parent_id: null,
-      detail: null, due_date: null,
+      detail: null, due_date: dueDate ?? null,
       completed: 0, starred: 0, manual_order: 9999,
       recurrence_rule: null, recurrence_end: null, missed_count: 0,
       created_at: now, updated_at: now, deleted_at: null,
