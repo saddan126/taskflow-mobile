@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'TaskFlow',
-        short_name: 'TaskFlow',
-        description: 'TaskFlow companion app',
+        name: 'Liana',
+        short_name: 'Liana',
+        description: 'Liana companion app',
         theme_color: '#4f6ef7',
         background_color: '#ffffff',
         display: 'standalone',
