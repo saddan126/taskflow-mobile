@@ -166,6 +166,13 @@ export default function TaskDetail() {
     saveTimer.current = window.setTimeout(() => { void commitText() }, 900)
   }
 
+  // If the title is left empty, quietly restore the last saved title so the UI
+  // matches the DB (we never persist an empty title). Detail may stay empty.
+  const onTitleBlur = () => {
+    if (!title.trim()) { setTitle(savedRef.current.title); return }
+    void commitText()
+  }
+
   // Selection fields (category / due date) save immediately.
   const saveImmediate = async (patch: Partial<Task>) => {
     const eid = editIdRef.current
@@ -279,7 +286,7 @@ export default function TaskDetail() {
               ref={titleArea}
               value={title}
               onChange={e => { setTitle(e.target.value); grow(e.currentTarget); scheduleSave() }}
-              onBlur={() => commitText()}
+              onBlur={onTitleBlur}
               placeholder="任務名稱"
               rows={1}
               style={{
