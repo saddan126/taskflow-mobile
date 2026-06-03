@@ -161,6 +161,32 @@ export function useTasks(categoryId?: string) {
     }
   }
 
+  // Patch a subset of a task's fields (used by the detail editor's auto-save).
+  // ONLY the provided fields are written, so untouched columns — recurrence_rule,
+  // recurrence_end, parent_id, starred, manual_order, completed — are never
+  // altered. On failure, surfaces a toast (same wording rules as toggleComplete)
+  // and returns false; callers can revert their local state on false.
+  const updateTaskFields = async (id: string, fields: Partial<Task>): Promise<boolean> => {
+    const now = new Date().toISOString()
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ ...fields, updated_at: now })
+        .eq('id', id)
+      if (error) throw error
+      // Keep the internal list consistent if this row is present.
+      setTasks(p => p.map(t => t.id === id ? { ...t, ...fields, updated_at: now } : t))
+      return true
+    } catch {
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法儲存，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
+      return false
+    }
+  }
+
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const taskMap = new Map(tasks.map(t => [t.id, t]))
@@ -189,7 +215,7 @@ export function useTasks(categoryId?: string) {
     tasks, rootTasks, pending, loading, error,
     blockedIds, depMap, taskMap,
     overdue, dueToday, upcoming,
-    toggleComplete, createTask,
+    toggleComplete, createTask, updateTaskFields,
     actionError,
     reload: load,
   }

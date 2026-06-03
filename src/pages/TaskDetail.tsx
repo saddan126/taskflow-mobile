@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase, type Task, type Category } from '../lib/supabase'
+import { supabase, type Task } from '../lib/supabase'
 import { daysFromToday, useTasks } from '../hooks/useTasks'
+import { useCategories } from '../hooks/useCategories'
 
 const C = {
   acc:'#4f6ef7', accL:'#eef1fe', accB:'#c7d0fb',
@@ -22,43 +23,65 @@ function dueBadge(d: string) {
   return { text:d, bg:C.b1, fg:C.t3 }
 }
 
+// Auto-size a textarea to its content so the title/notes grow naturally.
+function grow(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
 export default function TaskDetail() {
   const { id }  = useParams<{ id: string }>()
   const nav     = useNavigate()
+  const { toggleComplete, updateTaskFields, actionError } = useTasks()
+  const { categories } = useCategories()
+
   const [task, setTask]           = useState<Task | null>(null)
   const [children, setChildren]   = useState<Task[]>([])
-  const [category, setCategory]   = useState<Category | null>(null)
   const [prereqs, setPrereqs]     = useState<Task[]>([])
   const [isBlocked, setIsBlocked] = useState(false)
   const [loading, setLoading]     = useState(true)
   const [toggling, setToggling]   = useState(false)
-  // Reuse the shared toggle so rollback + offline toast live in one place.
-  const { toggleComplete, actionError } = useTasks()
 
+  // Editable fields (auto-saved).
+  const [title, setTitle]         = useState('')
+  const [detail, setDetail]       = useState('')
+  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [dueDate, setDueDate]     = useState<string | null>(null)
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  // Refs for debounce + flush-on-leave (so we never lose the last keystroke).
+  const saveTimer  = useRef<number | undefined>(undefined)
+  const flashTimer = useRef<number | undefined>(undefined)
+  const editIdRef  = useRef('')                                   // id currently being edited
+  const savedRef   = useRef<{ title: string; detail: string | null }>({ title:'', detail:null })
+  const titleRef   = useRef('')
+  const detailRef  = useRef('')
+  const flushRef   = useRef<() => void>(() => {})
+  const dateRef    = useRef<HTMLInputElement>(null)
+  const titleArea  = useRef<HTMLTextAreaElement>(null)
+  const detailArea = useRef<HTMLTextAreaElement>(null)
+
+  // Keep refs in sync with the latest text every render (used by the flush path).
+  titleRef.current  = title
+  detailRef.current = detail
+
+  const selectedCat = categories.find(c => c.id === categoryId) ?? null
+
+  // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id) return
     let cancelled = false
 
     async function load() {
-      // Load task
       const { data: t } = await supabase
         .from('tasks').select('*').eq('id', id).single()
       if (!t || cancelled) return
 
-      // Load children
       const { data: ch } = await supabase
         .from('tasks').select('*')
         .eq('parent_id', id).is('deleted_at', null)
 
-      // Load category
-      let cat: Category | null = null
-      if (t.category_id) {
-        const { data: c } = await supabase
-          .from('categories').select('*').eq('id', t.category_id).single()
-        cat = c
-      }
-
-      // Load prerequisites
       const { data: depRows } = await supabase
         .from('task_dependencies')
         .select('depends_on_id').eq('task_id', id)
@@ -76,16 +99,90 @@ export default function TaskDetail() {
       if (!cancelled) {
         setTask(t)
         setChildren(ch ?? [])
-        setCategory(cat)
         setPrereqs(prereqTasks)
         setIsBlocked(blocked)
+        // Seed the editable fields + the "last saved" snapshot.
+        setTitle(t.title ?? '')
+        setDetail(t.detail ?? '')
+        setCategoryId(t.category_id)
+        setDueDate(t.due_date)
+        savedRef.current = { title: t.title ?? '', detail: t.detail ?? null }
+        editIdRef.current = t.id
         setLoading(false)
       }
     }
 
     load()
-    return () => { cancelled = true }
+    // On unmount OR before switching to another task id, flush any pending text
+    // edit for the OUTGOING task so it is never lost.
+    return () => { cancelled = true; flushRef.current() }
   }, [id])
+
+  // Auto-grow the textareas as content/loading changes.
+  useEffect(() => { grow(titleArea.current); grow(detailArea.current) }, [loading, title, detail])
+
+  // ── Auto-save ───────────────────────────────────────────────────────────────
+
+  const flashSaved = () => {
+    setSavedFlash(true)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1600)
+  }
+
+  // Commit debounced text edits (title / detail). `silent` skips local UI updates
+  // for the flush-on-leave path (component may be unmounting).
+  const commitText = async (silent = false) => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = undefined }
+    const eid = editIdRef.current
+    if (!eid) return
+
+    const tnorm = titleRef.current.trim()
+    const dnorm = detailRef.current.trim() ? detailRef.current : null
+    // Never wipe the title with an empty value — keep the last good title.
+    const titleChanged  = !!tnorm && tnorm !== savedRef.current.title
+    const detailChanged = dnorm !== savedRef.current.detail
+    if (!titleChanged && !detailChanged) return
+
+    const payload: Partial<Task> = {}
+    if (titleChanged)  payload.title  = tnorm
+    if (detailChanged) payload.detail = dnorm
+
+    const before = savedRef.current
+    // Optimistically mark saved so an overlapping flush won't double-send.
+    savedRef.current = { title: titleChanged ? tnorm : before.title, detail: dnorm }
+
+    const ok = await updateTaskFields(eid, payload)
+    if (!ok) { savedRef.current = before; return }   // error toast shown by the hook
+    if (!silent) {
+      setTask(t => t ? { ...t, ...payload } : t)
+      flashSaved()
+    }
+  }
+  // Always flush the latest commitText closure (reads refs, so values are current).
+  flushRef.current = () => { void commitText(true) }
+
+  const scheduleSave = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(() => { void commitText() }, 900)
+  }
+
+  // Selection fields (category / due date) save immediately.
+  const saveImmediate = async (patch: Partial<Task>) => {
+    const eid = editIdRef.current
+    if (!eid) return
+    const ok = await updateTaskFields(eid, patch)
+    if (ok) {
+      setTask(t => t ? { ...t, ...patch } : t)
+      flashSaved()
+    } else {
+      // Revert the control to the last known value (error toast shown by the hook).
+      if ('category_id' in patch) setCategoryId(task?.category_id ?? null)
+      if ('due_date'    in patch) setDueDate(task?.due_date ?? null)
+    }
+  }
+
+  const onPickCategory = (cid: string | null) => { setCategoryId(cid); void saveImmediate({ category_id: cid }) }
+  const onPickDue      = (d: string | null)   => { setDueDate(d);      void saveImmediate({ due_date: d }) }
 
   const handleToggle = async () => {
     if (!task || toggling) return
@@ -114,7 +211,7 @@ export default function TaskDetail() {
   )
 
   const done = task.completed === 1
-  const due  = task.due_date ? dueBadge(task.due_date) : null
+  const due  = dueDate ? dueBadge(dueDate) : null
 
   return (
     <div style={{ height:'100%', overflowY:'auto', background:C.b1 }}>
@@ -136,6 +233,21 @@ export default function TaskDetail() {
           </svg>
           返回
         </button>
+
+        <div style={{ flex:1 }} />
+
+        {/* Low-key auto-save indicator */}
+        <span style={{
+          fontSize:13, fontWeight:600, color:C.t3,
+          display:'flex', alignItems:'center', gap:4,
+          opacity: savedFlash ? 1 : 0, transition:'opacity .3s',
+        }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6l3 3 5-6" stroke={C.grn} strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          已儲存
+        </span>
       </div>
 
       <div style={{ padding:'8px 16px 40px' }}>
@@ -145,7 +257,7 @@ export default function TaskDetail() {
                       padding:'20px', marginBottom:12,
                       boxShadow:'0 1px 4px rgba(0,0,0,.06)' }}>
 
-          {/* Done + Title row */}
+          {/* Done + editable title row */}
           <div style={{ display:'flex', alignItems:'flex-start', gap:14 }}>
             <button onClick={handleToggle}
               style={{
@@ -163,16 +275,23 @@ export default function TaskDetail() {
               )}
             </button>
 
-            <h2 style={{
-              flex:1, fontSize:22, fontWeight:700, color: done ? C.t3 : C.t1,
-              textDecoration: done ? 'line-through' : 'none',
-              lineHeight:1.3, letterSpacing:'-0.02em',
-            }}>
-              {task.title}
-            </h2>
+            <textarea
+              ref={titleArea}
+              value={title}
+              onChange={e => { setTitle(e.target.value); grow(e.currentTarget); scheduleSave() }}
+              onBlur={() => commitText()}
+              placeholder="任務名稱"
+              rows={1}
+              style={{
+                flex:1, minWidth:0, fontSize:22, fontWeight:700,
+                color: done ? C.t3 : C.t1, lineHeight:1.3, letterSpacing:'-0.02em',
+                border:'none', outline:'none', background:'transparent',
+                resize:'none', overflow:'hidden', fontFamily:'inherit', padding:0,
+              }}
+            />
           </div>
 
-          {/* Status badges */}
+          {/* Status badges (read-only; recurrence shown but never edited) */}
           <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:14 }}>
             {done && (
               <span style={{ fontSize:12, fontWeight:700, padding:'4px 12px', borderRadius:99,
@@ -200,42 +319,77 @@ export default function TaskDetail() {
             )}
           </div>
 
-          {/* Detail / notes block */}
-          {task.detail && (
-            <div style={{
-              marginTop:14, background:C.b1, borderRadius:12,
-              padding:'12px', fontSize:14, color:C.t2,
-              lineHeight:1.6, whiteSpace:'pre-wrap',
-            }}>
-              {task.detail}
-            </div>
-          )}
+          {/* Editable detail / notes */}
+          <textarea
+            ref={detailArea}
+            value={detail}
+            onChange={e => { setDetail(e.target.value); grow(e.currentTarget); scheduleSave() }}
+            onBlur={() => commitText()}
+            placeholder="新增備註…"
+            rows={2}
+            style={{
+              marginTop:14, width:'100%', boxSizing:'border-box',
+              background:C.b1, borderRadius:12, padding:'12px',
+              fontSize:14, color:C.t2, lineHeight:1.6,
+              border:'none', outline:'none', resize:'none', overflow:'hidden',
+              fontFamily:'inherit',
+            }}
+          />
         </div>
 
-        {/* Info fields */}
-        {(category || (task.due_date && due)) && (
-          <div style={{ background:'#fff', borderRadius:20, overflow:'hidden',
-                        boxShadow:'0 1px 4px rgba(0,0,0,.06)', marginBottom:12 }}>
+        {/* Editable fields: category + due date */}
+        <div style={{ background:'#fff', borderRadius:20, overflow:'hidden',
+                      boxShadow:'0 1px 4px rgba(0,0,0,.06)', marginBottom:12 }}>
 
-            {category && (
-              <InfoRow icon="🏷" label="分類" last={!(task.due_date && due)}>
-                <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ width:8, height:8, borderRadius:'50%', background:category.color }} />
-                  <span style={{ fontSize:15, fontWeight:500, color:C.t1 }}>{category.name}</span>
-                </span>
-              </InfoRow>
-            )}
-
-            {task.due_date && due && (
-              <InfoRow icon="📅" label="到期日" last>
-                <span style={{ fontSize:13, fontWeight:700, padding:'3px 10px', borderRadius:99,
-                               background:due.bg, color:due.fg }}>
-                  {task.due_date} &nbsp;·&nbsp; {due.text}
-                </span>
-              </InfoRow>
-            )}
+          {/* Category */}
+          <div style={{ padding:'14px 16px', borderBottom:`1px solid ${C.b1}` }}>
+            <p style={labelStyle}>🏷 分類</p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:10 }}>
+              <Chip label="無分類" color={C.acc} active={!categoryId}
+                    onClick={() => onPickCategory(null)} />
+              {categories.map(cat => (
+                <Chip key={cat.id} label={cat.name} color={cat.color} dot
+                      active={categoryId === cat.id}
+                      onClick={() => onPickCategory(cat.id)} />
+              ))}
+            </div>
           </div>
-        )}
+
+          {/* Due date */}
+          <div style={{ padding:'14px 16px' }}>
+            <p style={labelStyle}>📅 到期日</p>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
+              <input
+                ref={dateRef}
+                type="date"
+                value={dueDate ?? ''}
+                onChange={e => onPickDue(e.target.value || null)}
+                style={{ position:'absolute', width:1, height:1, opacity:0, pointerEvents:'none' }}
+              />
+              <button
+                onClick={() => { try { (dateRef.current as any)?.showPicker() } catch { dateRef.current?.click() } }}
+                style={{
+                  display:'flex', alignItems:'center', gap:6,
+                  padding:'8px 14px', borderRadius:99,
+                  border:`1.5px solid ${dueDate ? '#ea580c66' : C.b2}`,
+                  background: dueDate ? C.ornL : '#fff',
+                  color: dueDate ? C.orn : C.t3,
+                  fontSize:14, fontWeight:600, cursor:'pointer',
+                }}>
+                {dueDate
+                  ? `${dueDate}${due ? '　·　' + due.text : ''}`
+                  : '＋ 設定日期'}
+              </button>
+              {dueDate && (
+                <button onClick={() => onPickDue(null)}
+                  style={{ background:'none', border:'none', cursor:'pointer',
+                           color:C.t3, fontSize:16, padding:'0 4px', lineHeight:1 }}>
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Prerequisites */}
         {prereqs.length > 0 && (
@@ -328,6 +482,29 @@ export default function TaskDetail() {
   )
 }
 
+const labelStyle: React.CSSProperties = {
+  fontSize:11, fontWeight:700, textTransform:'uppercase',
+  letterSpacing:'0.06em', color:'#999',
+}
+
+function Chip({ label, color, dot, active, onClick }: {
+  label:string; color:string; dot?:boolean; active:boolean; onClick:()=>void
+}) {
+  return (
+    <button onClick={onClick}
+      style={{
+        display:'flex', alignItems:'center', gap:6,
+        padding:'7px 14px', borderRadius:99, fontSize:13, fontWeight:600,
+        border:`1.5px solid ${active ? color : C.b2}`,
+        background: active ? color+'18' : 'transparent',
+        color: active ? color : C.t2, cursor:'pointer', whiteSpace:'nowrap',
+      }}>
+      {dot && <span style={{ width:7, height:7, borderRadius:'50%', background:color }} />}
+      {label}
+    </button>
+  )
+}
+
 // Transient write-failure toast. Auto-clears via useTasks.
 function Toast({ text }: { text: string }) {
   return (
@@ -340,25 +517,6 @@ function Toast({ text }: { text: string }) {
       boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
     }}>
       {text}
-    </div>
-  )
-}
-
-function InfoRow({ icon, label, children, last }: {
-  icon:string; label:string; children:React.ReactNode; last?:boolean
-}) {
-  return (
-    <div style={{
-      display:'flex', gap:14, padding:'14px 16px',
-      borderBottom: last ? 'none' : '1px solid #f0f0f2',
-      alignItems:'flex-start',
-    }}>
-      <span style={{ fontSize:16, flexShrink:0, marginTop:1 }}>{icon}</span>
-      <div style={{ flex:1, minWidth:0 }}>
-        <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase',
-                    letterSpacing:'0.06em', color:'#999', marginBottom:4 }}>{label}</p>
-        {children}
-      </div>
     </div>
   )
 }
