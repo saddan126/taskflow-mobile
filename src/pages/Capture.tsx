@@ -35,7 +35,11 @@ export default function Capture() {
       setTimeout(() => setSaved(null), 2500)
       inputRef.current?.focus()
     } catch (e: any) {
-      setError('儲存失敗，請確認網路連線')
+      if (e?.message === 'NOT_AUTHENTICATED') {
+        setError('尚未登入，無法儲存')
+      } else {
+        setError('目前似乎離線，暫時無法儲存，請稍後再試')
+      }
     } finally {
       setSaving(false)
     }

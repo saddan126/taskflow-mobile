@@ -18,6 +18,8 @@ export function useTasks(categoryId?: string) {
   const [deps,    setDeps]    = useState<Dep[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  // Transient toast for write failures (offline / network). Auto-clears.
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -48,23 +50,46 @@ export function useTasks(categoryId?: string) {
 
   useEffect(() => { load() }, [load])
 
+  // Auto-dismiss the write-failure toast after a few seconds.
+  useEffect(() => {
+    if (!actionError) return
+    const t = setTimeout(() => setActionError(null), 3500)
+    return () => clearTimeout(t)
+  }, [actionError])
+
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  const toggleComplete = async (task: Task) => {
+  // Toggle a task's completion. Optimistic, but rolls the row back to its
+  // previous state and surfaces a toast if the write fails (offline / network).
+  // Returns true on success, false on failure — callers may use this to keep
+  // their own local state in sync without duplicating rollback logic.
+  const toggleComplete = async (task: Task): Promise<boolean> => {
     const now       = new Date().toISOString()
-    const completed = task.completed === 1 ? 0 : 1
+    const prev      = task.completed
+    const completed = prev === 1 ? 0 : 1
     // Optimistic update
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed } : t))
-    await supabase
-      .from('tasks')
-      .update({ completed, updated_at: now })
-      .eq('id', task.id)
-    // No need to reload — optimistic is fine for a simple toggle
+    setTasks(p => p.map(t => t.id === task.id ? { ...t, completed } : t))
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed, updated_at: now })
+        .eq('id', task.id)
+      if (error) throw error
+      return true
+    } catch {
+      // Roll back to the pre-toggle value and tell the user honestly.
+      setTasks(p => p.map(t => t.id === task.id ? { ...t, completed: prev } : t))
+      setActionError('目前似乎離線，暫時無法更新，請稍後再試')
+      return false
+    }
   }
 
   const createTask = async (title: string, catId: string | null, dueDate?: string | null) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    // Require a valid session before writing, so we never fake success offline
+    // or when logged out.
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('NOT_AUTHENTICATED')
+    const user = session.user
 
     const now  = new Date().toISOString()
     const id   = crypto.randomUUID()
@@ -117,6 +142,7 @@ export function useTasks(categoryId?: string) {
     blockedIds, depMap, taskMap,
     overdue, dueToday, upcoming,
     toggleComplete, createTask,
+    actionError,
     reload: load,
   }
 }

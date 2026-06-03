@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase, type Task, type Category } from '../lib/supabase'
-import { daysFromToday } from '../hooks/useTasks'
+import { daysFromToday, useTasks } from '../hooks/useTasks'
 
 const C = {
   acc:'#4f6ef7', accL:'#eef1fe', accB:'#c7d0fb',
@@ -32,6 +32,8 @@ export default function TaskDetail() {
   const [isBlocked, setIsBlocked] = useState(false)
   const [loading, setLoading]     = useState(true)
   const [toggling, setToggling]   = useState(false)
+  // Reuse the shared toggle so rollback + offline toast live in one place.
+  const { toggleComplete, actionError } = useTasks()
 
   useEffect(() => {
     if (!id) return
@@ -88,11 +90,10 @@ export default function TaskDetail() {
   const handleToggle = async () => {
     if (!task || toggling) return
     setToggling(true)
-    const completed = task.completed === 1 ? 0 : 1
-    setTask(t => t ? { ...t, completed } : t)
-    await supabase.from('tasks')
-      .update({ completed, updated_at: new Date().toISOString() })
-      .eq('id', task.id)
+    // Commit to local state only after the shared write succeeds; on failure
+    // the shared toggleComplete handles the toast and we leave the row as-is.
+    const ok = await toggleComplete(task)
+    if (ok) setTask(t => t ? { ...t, completed: t.completed === 1 ? 0 : 1 } : t)
     setToggling(false)
   }
 
@@ -321,6 +322,24 @@ export default function TaskDetail() {
           </div>
         )}
       </div>
+
+      {actionError && <Toast text={actionError} />}
+    </div>
+  )
+}
+
+// Transient write-failure toast. Auto-clears via useTasks.
+function Toast({ text }: { text: string }) {
+  return (
+    <div style={{
+      position:'fixed', left:16, right:16,
+      bottom:'calc(72px + env(safe-area-inset-bottom))',
+      padding:'12px 16px', borderRadius:14,
+      background:'#fef2f2', border:'1px solid #fecaca',
+      color:'#dc2626', fontSize:14, fontWeight:500, textAlign:'center',
+      boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
+    }}>
+      {text}
     </div>
   )
 }

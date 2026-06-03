@@ -15,7 +15,7 @@ const C = {
 export default function Tasks() {
   const nav = useNavigate()
   const [activeCat, setActiveCat] = useState<string>('')
-  const { rootTasks, blockedIds, toggleComplete, loading } = useTasks(activeCat || undefined)
+  const { rootTasks, blockedIds, toggleComplete, loading, actionError } = useTasks(activeCat || undefined)
   const { categories } = useCategories()
 
   const pending   = rootTasks.filter(t => !t.completed)
@@ -83,6 +83,24 @@ export default function Tasks() {
           <div style={{ height:24 }} />
         </div>
       )}
+
+      {actionError && <Toast text={actionError} />}
+    </div>
+  )
+}
+
+// Transient write-failure toast, floats above the bottom nav. Auto-clears via useTasks.
+function Toast({ text }: { text: string }) {
+  return (
+    <div style={{
+      position:'fixed', left:16, right:16,
+      bottom:'calc(72px + env(safe-area-inset-bottom))',
+      padding:'12px 16px', borderRadius:14,
+      background:'#fef2f2', border:'1px solid #fecaca',
+      color:'#dc2626', fontSize:14, fontWeight:500, textAlign:'center',
+      boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
+    }}>
+      {text}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 # Liana 手機版狀態文件
-> 最後更新：2026-06-02
+> 最後更新：2026-06-03
 
 ## 技術架構
 - **框架**：React 18 + TypeScript，建置工具 Vite 5，路由用 `react-router-dom` v6（`BrowserRouter`）。UI 全部為 inline style，無 CSS 框架。
@@ -52,15 +52,15 @@
 - **`src/lib/api.ts` 為死碼**：全專案沒有任何檔案 import 它，App 實際走 `hooks/useTasks.ts` + `lib/supabase.ts`。`api.ts` 內含與 `useTasks` 重複且行為不同的 `createTask` / `toggleComplete`（例如 `manual_order` 不同），容易誤導維護者。
 - **`Tasks.tsx` CSS bug**：第 29 行 `paddingTop:'calc(20px + env(safe-area-inset-top)'` 少一個右括號，`calc()` 未閉合，該 padding 在多數瀏覽器會被視為無效而失效（瀏海安全區 padding 沒生效）。
 - **時區邊界**：`daysFromToday` 用 `new Date('YYYY-MM-DD')`（解析為 UTC 午夜）再與本地 `setHours(0,0,0,0)` 相減，跨時區時可能「逾期/今天」差一天。`todayStr` 用 `toISOString().slice(0,10)` 取的是 UTC 日期，與本地日期在跨日時段可能不一致。
-- **寫入皆需連線、無離線佇列**：雖是 PWA，但建立/完成任務都直接打 Supabase，離線時 Capture 會顯示「儲存失敗」，完成切換則靜默失敗。
-- **完成切換缺錯誤處理**：Focus / Tasks / TaskDetail 的 `toggleComplete` 沒有 try/catch 或 rollback，後端失敗時 UI 仍顯示已完成（與真實狀態不符）。
+- **寫入皆需連線、無離線佇列**：雖是 PWA，但建立/完成任務都直接打 Supabase。離線/網路錯誤時現在會老實提示並把畫面狀態回正（階段 0A 完成），但仍**刻意不做**離線佇列、自動重試、衝突解決或快取寫入。
+- ✅ **未登入假成功（已修復，階段 0A）**：`useTasks.createTask` 寫入前先檢查 `supabase.auth.getSession()`，無 session 直接拋出 `NOT_AUTHENTICATED`，不做樂觀新增、不顯示成功；Capture 改顯示「尚未登入，無法儲存」。
+- ✅ **完成切換缺錯誤處理（已修復，階段 0A）**：`useTasks.toggleComplete` 改採 try/catch，寫入失敗會把該任務退回切換前狀態並彈出提示「目前似乎離線，暫時無法更新，請稍後再試」。Focus / Tasks / TaskDetail 共用同一份 rollback 邏輯（TaskDetail 改為寫入成功後才更新本地狀態）。
 - **anon key 硬編碼於原始碼**：雖為 publishable key，仍應確認 Supabase RLS 已正確設定，避免越權讀寫。
 - **無錯誤邊界**：任何頁面 render 例外會讓整個 App 白畫面。
 
 ## 待處理項目
 - 修正 `Tasks.tsx` 第 29 行 `calc(...)` 缺右括號的 CSS bug。
 - 移除或整併死碼 `src/lib/api.ts`，避免與 `useTasks` 邏輯分歧（特別是 `manual_order`）。
-- 為 `toggleComplete` 加入錯誤處理與失敗 rollback。
 - 補上任務編輯（標題 / 備註 / 分類 / 到期日）與刪除（軟刪除）功能。
 - 評估導入 Supabase realtime 或下拉刷新，改善多裝置同步即時性。
 - 統一時間/時區處理（`todayStr`、`daysFromToday`），避免跨日誤判。
