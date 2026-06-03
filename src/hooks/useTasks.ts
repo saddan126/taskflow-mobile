@@ -15,8 +15,15 @@ export function daysFromToday(d: string): number {
 // accurately (an expired/missing session reads very differently from a flaky
 // network). Offline-but-logged-in returns true (getSession reads local storage).
 async function hasValidSession(): Promise<boolean> {
-  const { data: { session } } = await supabase.auth.getSession()
-  return Boolean(session)
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    return Boolean(session)
+  } catch {
+    // If we can't even read the session, treat it as "no valid session" so the
+    // failure flow finishes cleanly (rather than rejecting and, e.g., leaving
+    // TaskDetail's toggle button stuck disabled).
+    return false
+  }
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
