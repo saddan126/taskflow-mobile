@@ -26,7 +26,7 @@ export default function Tasks() {
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#fff' }}>
 
       {/* Header */}
-      <div style={{ padding:'20px 16px 12px', paddingTop:'calc(20px + env(safe-area-inset-top)',
+      <div style={{ padding:'20px 16px 12px', paddingTop:'calc(20px + env(safe-area-inset-top))',
                     borderBottom:`1px solid ${C.b1}`, background:'#fff', flexShrink:0 }}>
         <h1 style={{ fontSize:28, fontWeight:800, color:C.t1, letterSpacing:'-0.03em', marginBottom:12 }}>
           全部任務

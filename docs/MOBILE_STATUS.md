@@ -46,21 +46,19 @@
   - **無 realtime 訂閱**：手機端只在元件掛載或切換分類時 `load()`，不會即時收到其他裝置的變更，需重開頁面/重載才會更新。
   - **樂觀更新不重載**：`toggleComplete` 改完不重新抓取，多裝置同時操作可能短暫不一致。
   - **時間戳由前端產生**：`created_at` / `updated_at` 由裝置本地時鐘以 ISO 字串寫入，跨裝置時鐘不同步時排序可能受影響。
-  - **`manual_order` 規則不一致**：`useTasks.createTask` 寫入固定值 `9999`，而 `lib/api.ts` 用 `Date.now()`（後者目前未被使用，見下）；若日後啟用會造成排序基準不一致。
+  - **`manual_order` 寫入固定值**：`useTasks.createTask` 一律寫入 `9999`，與桌面版的排序基準是否一致尚未驗證。（先前 `lib/api.ts` 用 `Date.now()` 的分歧已隨該死碼於階段 1 刪除而消失。）
 
 ## 已知問題與限制
-- **`src/lib/api.ts` 為死碼**：全專案沒有任何檔案 import 它，App 實際走 `hooks/useTasks.ts` + `lib/supabase.ts`。`api.ts` 內含與 `useTasks` 重複且行為不同的 `createTask` / `toggleComplete`（例如 `manual_order` 不同），容易誤導維護者。
-- **`Tasks.tsx` CSS bug**：第 29 行 `paddingTop:'calc(20px + env(safe-area-inset-top)'` 少一個右括號，`calc()` 未閉合，該 padding 在多數瀏覽器會被視為無效而失效（瀏海安全區 padding 沒生效）。
+- ✅ **`src/lib/api.ts` 死碼（已修復，階段 1）**：確認全專案無任何 import 後已整檔刪除。App 走 `hooks/useTasks.ts` + `lib/supabase.ts`，不再有與 `useTasks` 行為不同的重複邏輯（`manual_order`、舊 UTC 日期算法）。
+- ✅ **`Tasks.tsx` CSS bug（已修復，階段 1）**：第 29 行 `calc(20px + env(safe-area-inset-top)` 補上缺少的右括號，`calc()` 正確閉合，瀏海安全區 padding 恢復生效。
 - ✅ **時區邊界（已修復，階段 0B）**：原本 `daysFromToday` 用 `new Date('YYYY-MM-DD')`（UTC 午夜）混本地 `setHours`、`todayStr` 用 `toISOString().slice(0,10)`（UTC 日期），跨日時段會差一天。現已統一為單一算法 `getDailyDateKey()`：一律用本地時間，並套用凌晨 4 點換日（`DAILY_RESET_HOUR = 4`），與桌面版一致；`todayStr` / `daysFromToday` 皆改為以此為基準（`daysFromToday` 用本地午夜相減 + 四捨五入避開 DST）。
 - **寫入皆需連線、無離線佇列**：雖是 PWA，但建立/完成任務都直接打 Supabase。失敗時會依原因區分提示（未登入 / 登入失效 / 其他），**不再一律說成「離線」**，並把畫面狀態回正（階段 0A）。仍**刻意不做**離線佇列、自動重試、衝突解決或快取寫入。
 - ✅ **未登入假成功（已修復，階段 0A）**：`useTasks.createTask` 寫入前先檢查 `supabase.auth.getSession()`，無 session 直接拋出 `NOT_AUTHENTICATED`，不做樂觀新增、不顯示成功；Capture 改顯示「尚未登入，無法儲存」。寫入後若失敗，會再依 session 是否有效分為 `SESSION_EXPIRED`（「登入狀態已失效，請重新登入後再試」）或 `WRITE_FAILED`（「暫時無法儲存，請稍後再試」）。
 - ✅ **完成切換缺錯誤處理（已修復，階段 0A）**：`useTasks.toggleComplete` 改採 try/catch，寫入失敗會把該任務退回切換前狀態，並依失敗原因彈出提示——session 失效顯示「登入狀態已失效，請重新登入後再試」，其他（離線 / 伺服器拒絕）顯示中性的「暫時無法更新，請稍後再試」。Focus / Tasks / TaskDetail 共用同一份 rollback 邏輯（TaskDetail 改為寫入成功後才更新本地狀態）。
 - **anon key 硬編碼於原始碼**：雖為 publishable key，仍應確認 Supabase RLS 已正確設定，避免越權讀寫。
-- **無錯誤邊界**：任何頁面 render 例外會讓整個 App 白畫面。
+- ✅ **無錯誤邊界（已修復，階段 1）**：`App.tsx` 加入 `ErrorBoundary` 包住最外層；頁面 render 例外時顯示「畫面好像出了點問題，請重新整理試試」與重新整理按鈕，不再整片白畫面。
 
 ## 待處理項目
-- 修正 `Tasks.tsx` 第 29 行 `calc(...)` 缺右括號的 CSS bug。
-- 移除或整併死碼 `src/lib/api.ts`，避免與 `useTasks` 邏輯分歧（特別是 `manual_order`）。
 - 補上任務編輯（標題 / 備註 / 分類 / 到期日）與刪除（軟刪除）功能。
 - 評估導入 Supabase realtime 或下拉刷新，改善多裝置同步即時性。
 - 換日時間（`dailyResetHour`）目前寫死為 `4`，未來需與桌面版透過 Supabase 同步（桌面版設定存於本機 `settings.json`，尚未上雲）。

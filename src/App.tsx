@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Component, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, signIn, signOut } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
@@ -183,24 +183,70 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
-      <div style={{ width:32, height:32, border:'3px solid #4f6ef7',
-                    borderTopColor:'transparent', borderRadius:'50%',
-                    animation:'spin 0.7s linear infinite' }} />
-    </div>
-  )
-
-  if (!session) return (
-    <BrowserRouter>
-      <LoginScreen onLogin={setSession} />
-    </BrowserRouter>
-  )
-
   return (
-    <BrowserRouter>
-      <AppShell session={session} />
-    </BrowserRouter>
+    <ErrorBoundary>
+      {loading ? (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
+          <div style={{ width:32, height:32, border:'3px solid #4f6ef7',
+                        borderTopColor:'transparent', borderRadius:'50%',
+                        animation:'spin 0.7s linear infinite' }} />
+        </div>
+      ) : !session ? (
+        <BrowserRouter>
+          <LoginScreen onLogin={setSession} />
+        </BrowserRouter>
+      ) : (
+        <BrowserRouter>
+          <AppShell session={session} />
+        </BrowserRouter>
+      )}
+    </ErrorBoundary>
+  )
+}
+
+// ── Error boundary ──────────────────────────────────────────────────────────
+// Catches render-time exceptions anywhere below it so a thrown page renders a
+// friendly recovery screen instead of a blank white app.
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('App render error:', error)
+  }
+
+  render() {
+    if (this.state.hasError) return <ErrorScreen />
+    return this.props.children
+  }
+}
+
+function ErrorScreen() {
+  return (
+    <div style={{
+      height:'100%', display:'flex', flexDirection:'column',
+      alignItems:'center', justifyContent:'center',
+      padding:'32px 24px', gap:14, textAlign:'center',
+    }}>
+      <div style={{ fontSize:44 }}>🌱</div>
+      <p style={{ fontSize:17, fontWeight:700, color:C.t1 }}>畫面好像出了點問題</p>
+      <p style={{ fontSize:14, color:C.t3, lineHeight:1.6 }}>
+        請重新整理試試，你的資料都還在。
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        style={{
+          marginTop:6, padding:'12px 28px', borderRadius:14,
+          background:C.acc, color:'#fff', border:'none',
+          fontSize:15, fontWeight:700, cursor:'pointer',
+        }}>
+        重新整理
+      </button>
+    </div>
   )
 }
 
