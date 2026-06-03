@@ -11,6 +11,14 @@ export function daysFromToday(d: string): number {
   )
 }
 
+// Whether there is still a usable auth session — used to phrase write failures
+// accurately (an expired/missing session reads very differently from a flaky
+// network). Offline-but-logged-in returns true (getSession reads local storage).
+async function hasValidSession(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession()
+  return Boolean(session)
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useTasks(categoryId?: string) {
@@ -77,9 +85,15 @@ export function useTasks(categoryId?: string) {
       if (error) throw error
       return true
     } catch {
-      // Roll back to the pre-toggle value and tell the user honestly.
+      // Roll back to the pre-toggle value and tell the user honestly. Phrase
+      // the message by cause: an invalid session needs re-login, anything else
+      // (offline / server rejection) stays neutral rather than claiming offline.
       setTasks(p => p.map(t => t.id === task.id ? { ...t, completed: prev } : t))
-      setActionError('目前似乎離線，暫時無法更新，請稍後再試')
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法更新，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
       return false
     }
   }
@@ -107,9 +121,9 @@ export function useTasks(categoryId?: string) {
     setTasks(prev => [newTask as Task, ...prev])
     const { error } = await supabase.from('tasks').insert(newTask)
     if (error) {
-      // Rollback
+      // Rollback, then classify the failure so Capture can phrase it accurately.
       setTasks(prev => prev.filter(t => t.id !== id))
-      throw error
+      throw new Error((await hasValidSession()) ? 'WRITE_FAILED' : 'SESSION_EXPIRED')
     }
   }
 

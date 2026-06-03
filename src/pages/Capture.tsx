@@ -35,10 +35,13 @@ export default function Capture() {
       setTimeout(() => setSaved(null), 2500)
       inputRef.current?.focus()
     } catch (e: any) {
-      if (e?.message === 'NOT_AUTHENTICATED') {
+      const code = e?.message
+      if (code === 'NOT_AUTHENTICATED') {
         setError('尚未登入，無法儲存')
+      } else if (code === 'SESSION_EXPIRED') {
+        setError('登入狀態已失效，請重新登入後再試')
       } else {
-        setError('目前似乎離線，暫時無法儲存，請稍後再試')
+        setError('暫時無法儲存，請稍後再試')
       }
     } finally {
       setSaving(false)
