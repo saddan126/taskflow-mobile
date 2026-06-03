@@ -2,13 +2,40 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase, type Task, type Dep } from '../lib/supabase'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
+// 全手機版唯一的日期算法：一律用「本地時間」，並套用凌晨 4 點換日，行為與桌面版一致。
+// 不要在別處用 toISOString() 取日期或用 new Date('YYYY-MM-DD')（會以 UTC 解讀）。
 
-export const todayStr = () => new Date().toISOString().slice(0, 10)
+// 換日時間（小時）：現在時間的小時數 < 此值時，視為前一天。
+// NOTE: 目前寫死為 4，與桌面版預設值一致。未來需改為從 Supabase 同步
+//       （桌面版的此設定目前存於本機 settings.json，尚未上雲）。
+const DAILY_RESET_HOUR = 4
 
+// 取得「今天是哪一天」的日期鍵（本地時間 + 凌晨 4 點換日）。回傳 'YYYY-MM-DD'。
+// 等同桌面版的 getDailyDateKey。
+export function getDailyDateKey(now: Date = new Date(), resetHour: number = DAILY_RESET_HOUR): string {
+  const adjusted = new Date(now)
+  if (adjusted.getHours() < resetHour) adjusted.setDate(adjusted.getDate() - 1)
+  const y = adjusted.getFullYear()
+  const m = String(adjusted.getMonth() + 1).padStart(2, '0')
+  const d = String(adjusted.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// 把 'YYYY-MM-DD' 當「本地」日期解析（避免 new Date('YYYY-MM-DD') 以 UTC 午夜解讀）。
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// 今天的日期鍵（本地 + 凌晨 4 點換日）。
+export const todayStr = () => getDailyDateKey()
+
+// 目標日期距離「今天」幾天（負數 = 已逾期）。
+// 兩端都以本地午夜為基準、四捨五入以避開 DST 造成的 23/25 小時誤差。
 export function daysFromToday(d: string): number {
-  return Math.ceil(
-    (new Date(d).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86_400_000
-  )
+  const today  = parseLocalDate(getDailyDateKey())
+  const target = parseLocalDate(d)
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000)
 }
 
 // Whether there is still a usable auth session — used to phrase write failures

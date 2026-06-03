@@ -51,7 +51,7 @@
 ## 已知問題與限制
 - **`src/lib/api.ts` 為死碼**：全專案沒有任何檔案 import 它，App 實際走 `hooks/useTasks.ts` + `lib/supabase.ts`。`api.ts` 內含與 `useTasks` 重複且行為不同的 `createTask` / `toggleComplete`（例如 `manual_order` 不同），容易誤導維護者。
 - **`Tasks.tsx` CSS bug**：第 29 行 `paddingTop:'calc(20px + env(safe-area-inset-top)'` 少一個右括號，`calc()` 未閉合，該 padding 在多數瀏覽器會被視為無效而失效（瀏海安全區 padding 沒生效）。
-- **時區邊界**：`daysFromToday` 用 `new Date('YYYY-MM-DD')`（解析為 UTC 午夜）再與本地 `setHours(0,0,0,0)` 相減，跨時區時可能「逾期/今天」差一天。`todayStr` 用 `toISOString().slice(0,10)` 取的是 UTC 日期，與本地日期在跨日時段可能不一致。
+- ✅ **時區邊界（已修復，階段 0B）**：原本 `daysFromToday` 用 `new Date('YYYY-MM-DD')`（UTC 午夜）混本地 `setHours`、`todayStr` 用 `toISOString().slice(0,10)`（UTC 日期），跨日時段會差一天。現已統一為單一算法 `getDailyDateKey()`：一律用本地時間，並套用凌晨 4 點換日（`DAILY_RESET_HOUR = 4`），與桌面版一致；`todayStr` / `daysFromToday` 皆改為以此為基準（`daysFromToday` 用本地午夜相減 + 四捨五入避開 DST）。
 - **寫入皆需連線、無離線佇列**：雖是 PWA，但建立/完成任務都直接打 Supabase。失敗時會依原因區分提示（未登入 / 登入失效 / 其他），**不再一律說成「離線」**，並把畫面狀態回正（階段 0A）。仍**刻意不做**離線佇列、自動重試、衝突解決或快取寫入。
 - ✅ **未登入假成功（已修復，階段 0A）**：`useTasks.createTask` 寫入前先檢查 `supabase.auth.getSession()`，無 session 直接拋出 `NOT_AUTHENTICATED`，不做樂觀新增、不顯示成功；Capture 改顯示「尚未登入，無法儲存」。寫入後若失敗，會再依 session 是否有效分為 `SESSION_EXPIRED`（「登入狀態已失效，請重新登入後再試」）或 `WRITE_FAILED`（「暫時無法儲存，請稍後再試」）。
 - ✅ **完成切換缺錯誤處理（已修復，階段 0A）**：`useTasks.toggleComplete` 改採 try/catch，寫入失敗會把該任務退回切換前狀態，並依失敗原因彈出提示——session 失效顯示「登入狀態已失效，請重新登入後再試」，其他（離線 / 伺服器拒絕）顯示中性的「暫時無法更新，請稍後再試」。Focus / Tasks / TaskDetail 共用同一份 rollback 邏輯（TaskDetail 改為寫入成功後才更新本地狀態）。
@@ -63,6 +63,6 @@
 - 移除或整併死碼 `src/lib/api.ts`，避免與 `useTasks` 邏輯分歧（特別是 `manual_order`）。
 - 補上任務編輯（標題 / 備註 / 分類 / 到期日）與刪除（軟刪除）功能。
 - 評估導入 Supabase realtime 或下拉刷新，改善多裝置同步即時性。
-- 統一時間/時區處理（`todayStr`、`daysFromToday`），避免跨日誤判。
+- 換日時間（`dailyResetHour`）目前寫死為 `4`，未來需與桌面版透過 Supabase 同步（桌面版設定存於本機 `settings.json`，尚未上雲）。
 - 規劃重複任務的實際生成邏輯，而非僅顯示標記。
 - 登入畫面評估補上註冊 / 忘記密碼入口。
