@@ -41,7 +41,7 @@ export function daysFromToday(d: string): number {
 // Whether there is still a usable auth session — used to phrase write failures
 // accurately (an expired/missing session reads very differently from a flaky
 // network). Offline-but-logged-in returns true (getSession reads local storage).
-async function hasValidSession(): Promise<boolean> {
+export async function hasValidSession(): Promise<boolean> {
   try {
     const { data: { session } } = await supabase.auth.getSession()
     return Boolean(session)

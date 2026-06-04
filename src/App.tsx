@@ -6,6 +6,7 @@ import Capture    from './pages/Capture'
 import Focus      from './pages/Focus'
 import Tasks      from './pages/Tasks'
 import TaskDetail from './pages/TaskDetail'
+import Today      from './pages/Today'
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ function BottomNav() {
   const tabs = [
     { path:'/',       label:'記錄', icon: <CaptureIcon /> },
     { path:'/focus',  label:'焦點', icon: <FocusIcon /> },
+    { path:'/today',  label:'今日', icon: <TodayIcon /> },
     { path:'/tasks',  label:'任務', icon: <TasksIcon /> },
   ]
 
@@ -75,6 +77,7 @@ function AppShell({ session }: { session: Session }) {
         <Routes>
           <Route path="/"          element={<Capture />} />
           <Route path="/focus"     element={<Focus />} />
+          <Route path="/today"     element={<Today />} />
           <Route path="/tasks"     element={<Tasks />} />
           <Route path="/task/:id"  element={<TaskDetail />} />
         </Routes>
@@ -275,6 +278,14 @@ function TasksIcon() {
       <path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
       <path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function TodayIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M3 12h4l2-6 4 14 2-8h6" stroke="currentColor" strokeWidth="1.8"
+            strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
