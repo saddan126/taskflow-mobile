@@ -115,7 +115,7 @@ export function useDailyMetrics() {
 
       const { error } = await supabase
         .from('daily_metric_logs')
-        .upsert(row, { onConflict: 'metric_id,date' })
+        .upsert(row, { onConflict: 'user_id,metric_id,date' })
       if (error) throw error
 
       setLogs(prev => ({ ...prev, [metric.id]: row as DailyMetricLog }))
