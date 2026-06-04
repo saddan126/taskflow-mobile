@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useTasks } from '../hooks/useTasks'
+import { useTasks, useUndoTask, setUndoTask } from '../hooks/useTasks'
+import { useLongPress } from '../hooks/useLongPress'
 import { useCategories } from '../hooks/useCategories'
 import type { Task } from '../lib/supabase'
 
@@ -9,14 +10,15 @@ const C = {
   t1:'#111', t2:'#555', t3:'#999',
   b1:'#f0f0f2', b2:'#e0e0e2',
   grn:'#16a34a', grnL:'#f0fdf4', grnB:'#bbf7d0',
-  red:'#dc2626',
+  red:'#dc2626', star:'#f59e0b',
 }
 
 export default function Tasks() {
   const nav = useNavigate()
   const [activeCat, setActiveCat] = useState<string>('')
-  const { rootTasks, blockedIds, toggleComplete, loading, actionError } = useTasks(activeCat || undefined)
+  const { rootTasks, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError } = useTasks(activeCat || undefined)
   const { categories } = useCategories()
+  const undo = useUndoTask()
 
   const pending   = rootTasks.filter(t => !t.completed)
   const completed = rootTasks.filter(t => t.completed)
@@ -58,6 +60,8 @@ export default function Tasks() {
             <TaskRow key={t.id} task={t} isBlocked={blockedIds.has(t.id)}
               category={catMap.get(t.category_id ?? '')}
               onToggle={() => toggleComplete(t)}
+              onToggleStar={() => toggleStar(t)}
+              onDelete={() => softDelete(t)}
               onTap={() => nav(`/task/${t.id}`)} />
           ))}
 
@@ -76,6 +80,8 @@ export default function Tasks() {
               <TaskRow key={t.id} task={t} isBlocked={false}
                 category={catMap.get(t.category_id ?? '')}
                 onToggle={() => toggleComplete(t)}
+                onToggleStar={() => toggleStar(t)}
+                onDelete={() => softDelete(t)}
                 onTap={() => nav(`/task/${t.id}`)} />
             ))}
           </div>
@@ -84,7 +90,33 @@ export default function Tasks() {
         </div>
       )}
 
+      {undo && (
+        <UndoToast onUndo={() => { const t = undo; setUndoTask(null); void restoreTask(t) }} />
+      )}
       {actionError && <Toast text={actionError} />}
+    </div>
+  )
+}
+
+// Neutral snackbar after a soft-delete, with an undo action. Auto-clears via useTasks.
+function UndoToast({ onUndo }: { onUndo: () => void }) {
+  return (
+    <div style={{
+      position:'fixed', left:16, right:16,
+      bottom:'calc(72px + env(safe-area-inset-bottom))',
+      padding:'12px 16px', borderRadius:14,
+      background:C.t1, color:'#fff',
+      fontSize:14, fontWeight:500,
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      boxShadow:'0 4px 20px rgba(0,0,0,.2)', zIndex:50,
+    }}>
+      <span>已刪除</span>
+      <button onClick={onUndo}
+        style={{ background:'none', border:'none', color:'#9db2ff',
+                 fontSize:14, fontWeight:700, cursor:'pointer',
+                 display:'flex', alignItems:'center', gap:6, padding:'2px 4px' }}>
+        ⟲ 復原
+      </button>
     </div>
   )
 }
@@ -128,13 +160,16 @@ function CatChip({ label, color, active, onClick }: {
   )
 }
 
-function TaskRow({ task, isBlocked, category, onToggle, onTap }: {
-  task:Task; isBlocked:boolean; category:any; onToggle:()=>void; onTap:()=>void
+function TaskRow({ task, isBlocked, category, onToggle, onTap, onToggleStar, onDelete }: {
+  task:Task; isBlocked:boolean; category:any
+  onToggle:()=>void; onTap:()=>void; onToggleStar:()=>void; onDelete:()=>void
 }) {
   const done = task.completed === 1
+  const lp   = useLongPress(onDelete)   // long-press the row to delete
   return (
     <div
       onClick={onTap}
+      {...lp}
       style={{
         display:'flex', alignItems:'center', gap:12,
         padding:'13px 14px', background:'#fff', borderRadius:14,
@@ -144,6 +179,7 @@ function TaskRow({ task, isBlocked, category, onToggle, onTap }: {
     >
       <button
         onClick={e => { e.stopPropagation(); onToggle() }}
+        onPointerDown={e => e.stopPropagation()}
         style={{
           flexShrink:0, width:22, height:22, borderRadius:'50%',
           border:`2px solid ${done ? C.grn : C.b2}`,
@@ -183,11 +219,32 @@ function TaskRow({ task, isBlocked, category, onToggle, onTap }: {
         </div>
       </div>
 
+      <button
+        onClick={e => { e.stopPropagation(); onToggleStar() }}
+        onPointerDown={e => e.stopPropagation()}
+        style={{ flexShrink:0, background:'none', border:'none',
+                 cursor:'pointer', padding:2, lineHeight:0 }}
+        aria-label={task.starred === 1 ? '取消加星' : '加星'}
+      >
+        <StarIcon filled={task.starred === 1} />
+      </button>
+
       <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ flexShrink:0 }}>
         <path d="M1 1l5 5-5 5" stroke="#c8c8c8" strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     </div>
+  )
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24"
+      fill={filled ? C.star : 'none'}
+      stroke={filled ? C.star : '#c8c8c8'} strokeWidth="1.8">
+      <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.6l5.8-.8L12 3.5z"
+            strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
   )
 }
 

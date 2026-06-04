@@ -12,6 +12,7 @@ const C = {
   red:'#dc2626', redL:'#fef2f2', redB:'#fecaca',
   orn:'#ea580c', ornL:'#fff7ed',
   amb:'#d97706', ambL:'#fffbeb',
+  star:'#f59e0b',
 }
 
 function dueBadge(d: string) {
@@ -33,7 +34,7 @@ function grow(el: HTMLTextAreaElement | null) {
 export default function TaskDetail() {
   const { id }  = useParams<{ id: string }>()
   const nav     = useNavigate()
-  const { toggleComplete, updateTaskFields, actionError } = useTasks()
+  const { toggleComplete, updateTaskFields, softDelete, toggleStar, actionError } = useTasks()
   const { categories } = useCategories()
 
   const [task, setTask]           = useState<Task | null>(null)
@@ -201,6 +202,21 @@ export default function TaskDetail() {
     setToggling(false)
   }
 
+  const handleDelete = async () => {
+    if (!task) return
+    // softDelete arms the undo prompt (shown on the list we return to) on success.
+    const ok = await softDelete(task)
+    if (ok) nav(-1)
+    // On failure the shared softDelete shows the toast and the task stays.
+  }
+
+  const handleStar = async () => {
+    if (!task) return
+    // Commit locally only after the shared write succeeds (failure → toast).
+    const ok = await toggleStar(task)
+    if (ok) setTask(t => t ? { ...t, starred: t.starred === 1 ? 0 : 1 } : t)
+  }
+
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
       <div style={{ width:28, height:28, border:'3px solid #4f6ef7',
@@ -296,6 +312,13 @@ export default function TaskDetail() {
                 resize:'none', overflow:'hidden', fontFamily:'inherit', padding:0,
               }}
             />
+
+            <button onClick={handleStar}
+              style={{ flexShrink:0, marginTop:2, background:'none', border:'none',
+                       cursor:'pointer', padding:2, lineHeight:0 }}
+              aria-label={task.starred === 1 ? '取消加星' : '加星'}>
+              <StarIcon filled={task.starred === 1} />
+            </button>
           </div>
 
           {/* Status badges (read-only; recurrence shown but never edited) */}
@@ -482,6 +505,18 @@ export default function TaskDetail() {
             ))}
           </div>
         )}
+
+        {/* Delete */}
+        <button
+          onClick={handleDelete}
+          style={{
+            marginTop:20, width:'100%', padding:'14px',
+            borderRadius:14, background:'#fff',
+            border:`1px solid ${C.redB}`, color:C.red,
+            fontSize:15, fontWeight:600, cursor:'pointer',
+          }}>
+          刪除任務
+        </button>
       </div>
 
       {actionError && <Toast text={actionError} />}
@@ -492,6 +527,17 @@ export default function TaskDetail() {
 const labelStyle: React.CSSProperties = {
   fontSize:11, fontWeight:700, textTransform:'uppercase',
   letterSpacing:'0.06em', color:'#999',
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24"
+      fill={filled ? C.star : 'none'}
+      stroke={filled ? C.star : '#c8c8c8'} strokeWidth="1.8">
+      <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.6l5.8-.8L12 3.5z"
+            strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
+  )
 }
 
 function Chip({ label, color, dot, active, onClick }: {

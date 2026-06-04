@@ -1,4 +1,5 @@
-import { useTasks, daysFromToday } from '../hooks/useTasks'
+import { useTasks, useUndoTask, setUndoTask, daysFromToday } from '../hooks/useTasks'
+import { useLongPress } from '../hooks/useLongPress'
 import { useCategories } from '../hooks/useCategories'
 import type { Task } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
@@ -10,6 +11,7 @@ const C = {
   orn:'#ea580c', ornL:'#fff7ed', ornB:'#fed7aa',
   amb:'#d97706', ambL:'#fffbeb', ambB:'#fde68a',
   grn:'#16a34a', grnL:'#f0fdf4', grnB:'#bbf7d0',
+  star:'#f59e0b',
 }
 
 function dueBadge(d: string): { text: string; bg: string; fg: string } {
@@ -21,19 +23,23 @@ function dueBadge(d: string): { text: string; bg: string; fg: string } {
   return { text:d, bg:C.b1, fg:C.t3 }
 }
 
-function TaskRow({ task, onToggle, onTap, isBlocked, categoryColor }: {
+function TaskRow({ task, onToggle, onTap, onToggleStar, onDelete, isBlocked, categoryColor }: {
   task: Task
   onToggle: (t: Task) => void
   onTap:    (id: string) => void
+  onToggleStar: (t: Task) => void
+  onDelete: (t: Task) => void
   isBlocked: boolean
   categoryColor?: string
 }) {
   const done = task.completed === 1
   const due  = task.due_date && !done ? dueBadge(task.due_date) : null
+  const lp   = useLongPress(() => onDelete(task))   // long-press the row to delete
 
   return (
     <div
       onClick={() => onTap(task.id)}
+      {...lp}
       style={{
         display:'flex', alignItems:'center', gap:12,
         padding:'14px 16px',
@@ -47,6 +53,7 @@ function TaskRow({ task, onToggle, onTap, isBlocked, categoryColor }: {
       {/* Checkbox */}
       <button
         onClick={e => { e.stopPropagation(); onToggle(task) }}
+        onPointerDown={e => e.stopPropagation()}
         style={{
           flexShrink:0, width:24, height:24, borderRadius:'50%',
           border:`2px solid ${done ? C.grn : isBlocked ? C.b2 : C.b2}`,
@@ -88,6 +95,16 @@ function TaskRow({ task, onToggle, onTap, isBlocked, categoryColor }: {
         )}
       </div>
 
+      <button
+        onClick={e => { e.stopPropagation(); onToggleStar(task) }}
+        onPointerDown={e => e.stopPropagation()}
+        style={{ flexShrink:0, background:'none', border:'none',
+                 cursor:'pointer', padding:2, lineHeight:0 }}
+        aria-label={task.starred === 1 ? '取消加星' : '加星'}
+      >
+        <StarIcon filled={task.starred === 1} />
+      </button>
+
       <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ flexShrink:0 }}>
         <path d="M1 1l5 5-5 5" stroke="#c8c8c8" strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round"/>
@@ -96,9 +113,21 @@ function TaskRow({ task, onToggle, onTap, isBlocked, categoryColor }: {
   )
 }
 
-function Section({ label, accent, tasks, onToggle, onTap, blockedIds, catMap, dimmed }: {
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24"
+      fill={filled ? C.star : 'none'}
+      stroke={filled ? C.star : '#c8c8c8'} strokeWidth="1.8">
+      <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.6l5.8-.8L12 3.5z"
+            strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function Section({ label, accent, tasks, onToggle, onTap, onToggleStar, onDelete, blockedIds, catMap, dimmed }: {
   label:string; accent:string; tasks:Task[]
   onToggle:(t:Task)=>void; onTap:(id:string)=>void
+  onToggleStar:(t:Task)=>void; onDelete:(t:Task)=>void
   blockedIds:Set<string>; catMap:Map<string,any>; dimmed?:boolean
 }) {
   if (tasks.length === 0) return null
@@ -118,6 +147,7 @@ function Section({ label, accent, tasks, onToggle, onTap, blockedIds, catMap, di
       {tasks.map(t => (
         <TaskRow key={t.id} task={t}
           onToggle={onToggle} onTap={onTap}
+          onToggleStar={onToggleStar} onDelete={onDelete}
           isBlocked={blockedIds.has(t.id)}
           categoryColor={catMap.get(t.category_id ?? '')?.color}
         />
@@ -128,9 +158,10 @@ function Section({ label, accent, tasks, onToggle, onTap, blockedIds, catMap, di
 
 export default function Focus() {
   const nav = useNavigate()
-  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, loading, actionError } = useTasks()
+  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError } = useTasks()
   const { categories } = useCategories()
   const catMap = new Map(categories.map(c => [c.id, c]))
+  const undo = useUndoTask()
 
   const blocked = pending.filter(t => blockedIds.has(t.id))
   const total   = overdue.length + dueToday.length + upcoming.length
@@ -160,19 +191,49 @@ export default function Focus() {
 
         <Section label="逾期"       accent={C.red} tasks={overdue}
           onToggle={toggleComplete} onTap={id=>nav(`/task/${id}`)}
+          onToggleStar={toggleStar} onDelete={softDelete}
           blockedIds={blockedIds} catMap={catMap} />
         <Section label="今天到期"   accent={C.orn} tasks={dueToday}
           onToggle={toggleComplete} onTap={id=>nav(`/task/${id}`)}
+          onToggleStar={toggleStar} onDelete={softDelete}
           blockedIds={blockedIds} catMap={catMap} />
         <Section label="未來 7 天"  accent={C.amb} tasks={upcoming}
           onToggle={toggleComplete} onTap={id=>nav(`/task/${id}`)}
+          onToggleStar={toggleStar} onDelete={softDelete}
           blockedIds={blockedIds} catMap={catMap} />
         <Section label="等待中（被阻擋）" accent={C.t3} dimmed tasks={blocked}
           onToggle={toggleComplete} onTap={id=>nav(`/task/${id}`)}
+          onToggleStar={toggleStar} onDelete={softDelete}
           blockedIds={blockedIds} catMap={catMap} />
       </div>
 
+      {undo && (
+        <UndoToast onUndo={() => { const t = undo; setUndoTask(null); void restoreTask(t) }} />
+      )}
       {actionError && <Toast text={actionError} />}
+    </div>
+  )
+}
+
+// Neutral snackbar after a soft-delete, with an undo action. Auto-clears via useTasks.
+function UndoToast({ onUndo }: { onUndo: () => void }) {
+  return (
+    <div style={{
+      position:'fixed', left:16, right:16,
+      bottom:'calc(72px + env(safe-area-inset-bottom))',
+      padding:'12px 16px', borderRadius:14,
+      background:C.t1, color:'#fff',
+      fontSize:14, fontWeight:500,
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      boxShadow:'0 4px 20px rgba(0,0,0,.2)', zIndex:50,
+    }}>
+      <span>已刪除</span>
+      <button onClick={onUndo}
+        style={{ background:'none', border:'none', color:'#9db2ff',
+                 fontSize:14, fontWeight:700, cursor:'pointer',
+                 display:'flex', alignItems:'center', gap:6, padding:'2px 4px' }}>
+        ⟲ 復原
+      </button>
     </div>
   )
 }

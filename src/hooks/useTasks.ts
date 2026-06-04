@@ -53,6 +53,36 @@ async function hasValidSession(): Promise<boolean> {
   }
 }
 
+// ── Undo store for soft-deletes ─────────────────────────────────────────────
+// A tiny cross-page store so the "已刪除 / 復原" prompt can appear on whichever
+// page is visible after a delete — including deleting in TaskDetail and then
+// returning to a list. Holds the most recently deleted task for a few seconds.
+
+let undoTask: Task | null = null
+let undoTimer: ReturnType<typeof setTimeout> | undefined
+const undoListeners = new Set<() => void>()
+const UNDO_MS = 5000
+
+function notifyUndo() { undoListeners.forEach(l => l()) }
+
+export function setUndoTask(task: Task | null) {
+  if (undoTimer) { clearTimeout(undoTimer); undoTimer = undefined }
+  undoTask = task
+  if (task) undoTimer = setTimeout(() => { undoTask = null; notifyUndo() }, UNDO_MS)
+  notifyUndo()
+}
+
+// Subscribe to the undo store; returns the task currently offering undo (or null).
+export function useUndoTask(): Task | null {
+  const [, force] = useState(0)
+  useEffect(() => {
+    const l = () => force(n => n + 1)
+    undoListeners.add(l)
+    return () => { undoListeners.delete(l) }
+  }, [])
+  return undoTask
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useTasks(categoryId?: string) {
@@ -187,6 +217,73 @@ export function useTasks(categoryId?: string) {
     }
   }
 
+  // Toggle a task's star. Optimistic; rolls back + toast on failure. Only writes
+  // `starred` (+ updated_at) — no other column, and no sorting change.
+  const toggleStar = async (task: Task): Promise<boolean> => {
+    const now     = new Date().toISOString()
+    const prev    = task.starred
+    const starred = prev === 1 ? 0 : 1
+    setTasks(p => p.map(t => t.id === task.id ? { ...t, starred } : t))
+    try {
+      const { error } = await supabase
+        .from('tasks').update({ starred, updated_at: now }).eq('id', task.id)
+      if (error) throw error
+      return true
+    } catch {
+      setTasks(p => p.map(t => t.id === task.id ? { ...t, starred: prev } : t))
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法更新，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
+      return false
+    }
+  }
+
+  // Soft-delete: write deleted_at so the row is hidden everywhere (queries filter
+  // deleted_at IS NULL) but stays recoverable. Only writes deleted_at (+ updated_at).
+  // On success, arms the undo store; on failure, reloads true state and toasts.
+  const softDelete = async (task: Task): Promise<boolean> => {
+    const now = new Date().toISOString()
+    setTasks(p => p.filter(t => t.id !== task.id))   // optimistic remove
+    try {
+      const { error } = await supabase
+        .from('tasks').update({ deleted_at: now, updated_at: now }).eq('id', task.id)
+      if (error) throw error
+      setUndoTask(task)
+      return true
+    } catch {
+      await load()   // restore the true server state (task reappears in place)
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法刪除，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
+      return false
+    }
+  }
+
+  // Restore a soft-deleted task: clear deleted_at (+ updated_at). Reloads so the
+  // task reappears in its correct position. Clears the undo store on success.
+  const restoreTask = async (task: Task): Promise<boolean> => {
+    const now = new Date().toISOString()
+    try {
+      const { error } = await supabase
+        .from('tasks').update({ deleted_at: null, updated_at: now }).eq('id', task.id)
+      if (error) throw error
+      setUndoTask(null)
+      await load()
+      return true
+    } catch {
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法復原，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
+      return false
+    }
+  }
+
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const taskMap = new Map(tasks.map(t => [t.id, t]))
@@ -216,6 +313,7 @@ export function useTasks(categoryId?: string) {
     blockedIds, depMap, taskMap,
     overdue, dueToday, upcoming,
     toggleComplete, createTask, updateTaskFields,
+    toggleStar, softDelete, restoreTask,
     actionError,
     reload: load,
   }
