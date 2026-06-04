@@ -76,8 +76,9 @@ export default function TaskDetail() {
 
     async function load() {
       const { data: t } = await supabase
-        .from('tasks').select('*').eq('id', id).single()
-      if (!t || cancelled) return
+        .from('tasks').select('*').eq('id', id).is('deleted_at', null).single()
+      if (cancelled) return
+      if (!t) { setLoading(false); return }   // deleted or missing → "找不到這個任務"
 
       const { data: ch } = await supabase
         .from('tasks').select('*')
@@ -91,7 +92,7 @@ export default function TaskDetail() {
       if (depRows && depRows.length > 0) {
         const ids = depRows.map((d: any) => d.depends_on_id)
         const { data: pTasks } = await supabase
-          .from('tasks').select('*').in('id', ids)
+          .from('tasks').select('*').in('id', ids).is('deleted_at', null)
         prereqTasks = pTasks ?? []
       }
 
