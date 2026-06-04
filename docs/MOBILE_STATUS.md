@@ -58,6 +58,8 @@
 - ✅ **完成切換缺錯誤處理（已修復，階段 0A）**：`useTasks.toggleComplete` 改採 try/catch，寫入失敗會把該任務退回切換前狀態，並依失敗原因彈出提示——session 失效顯示「登入狀態已失效，請重新登入後再試」，其他（離線 / 伺服器拒絕）顯示中性的「暫時無法更新，請稍後再試」。Focus / Tasks / TaskDetail 共用同一份 rollback 邏輯（TaskDetail 改為寫入成功後才更新本地狀態）。
 - **anon key 硬編碼於原始碼**：雖為 publishable key，仍應確認 Supabase RLS 已正確設定，避免越權讀寫。
 - ✅ **無錯誤邊界（已修復，階段 1）**：`App.tsx` 加入 `ErrorBoundary` 包住最外層；頁面 render 例外時顯示「畫面好像出了點問題，請重新整理試試」與重新整理按鈕，不再整片白畫面。
+- ✅ **每日指標今日輸入寫入失敗（已修復，階段 5-A 後）**：`useDailyMetrics.saveValue` 的 upsert `onConflict` 原寫成 `(metric_id, date)`，與 Supabase 實際唯一鍵 `(user_id, metric_id, date)` 不符，導致 Postgres `42P10`（找不到對應唯一約束）、寫入失敗但症狀只顯示「暫時無法儲存」。已修正 `onConflict` 為 `(user_id, metric_id, date)`。
+  - **經驗教訓**：Supabase 上 `daily_*` logs 表的唯一鍵**包含 `user_id`**（與桌面本機 SQLite 的唯一鍵不同）。未來實作 `daily_rhythm_logs` 寫入時，`onConflict` 應預期為 `(user_id, item_id, date)`，動工前先用 `pg_indexes` 查詢確認實際欄位再寫。
 
 ## 待處理項目
 - ✅ 下拉刷新已完成（階段 4，Focus / Tasks）；Supabase realtime 即時訂閱仍待評估（保留為後續項目）。
