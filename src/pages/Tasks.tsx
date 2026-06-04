@@ -16,12 +16,17 @@ const C = {
 export default function Tasks() {
   const nav = useNavigate()
   const [activeCat, setActiveCat] = useState<string>('')
+  const [query, setQuery]         = useState('')
   const { rootTasks, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError } = useTasks(activeCat || undefined)
   const { categories } = useCategories()
   const undo = useUndoTask()
 
-  const pending   = rootTasks.filter(t => !t.completed)
-  const completed = rootTasks.filter(t => t.completed)
+  // Title search, stacked on top of the (server-side) category filter. Front-end
+  // only: case-insensitive substring match on the title, never the detail.
+  const q = query.trim().toLowerCase()
+  const filtered  = q ? rootTasks.filter(t => (t.title ?? '').toLowerCase().includes(q)) : rootTasks
+  const pending   = filtered.filter(t => !t.completed)
+  const completed = filtered.filter(t => t.completed)
   const catMap    = new Map(categories.map(c => [c.id, c]))
 
   return (
@@ -33,6 +38,30 @@ export default function Tasks() {
         <h1 style={{ fontSize:28, fontWeight:800, color:C.t1, letterSpacing:'-0.03em', marginBottom:12 }}>
           全部任務
         </h1>
+
+        {/* Search */}
+        <div style={{ position:'relative', marginBottom:12 }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="搜尋任務標題…"
+            style={{
+              width:'100%', boxSizing:'border-box',
+              padding:'10px 36px 10px 14px', borderRadius:12,
+              border:`1.5px solid ${C.b2}`, background:C.b1,
+              fontSize:15, color:C.t1, outline:'none', fontFamily:'inherit',
+            }}
+          />
+          {query && (
+            <button onClick={() => setQuery('')}
+              aria-label="清除搜尋"
+              style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)',
+                       background:'none', border:'none', cursor:'pointer', color:C.t3,
+                       fontSize:16, padding:'4px 6px', lineHeight:1 }}>
+              ✕
+            </button>
+          )}
+        </div>
 
         {/* Category filter */}
         <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4 }}>
@@ -52,7 +81,7 @@ export default function Tasks() {
       ) : (
         <div style={{ flex:1, overflowY:'auto', padding:'12px 16px' }}>
           {pending.length === 0 && completed.length === 0 && (
-            <Empty />
+            q ? <SearchEmpty /> : <Empty />
           )}
 
           {/* Pending */}
@@ -262,6 +291,16 @@ function Empty() {
       <div style={{ fontSize:40, marginBottom:12 }}>📋</div>
       <p style={{ fontSize:16, fontWeight:600, color:'#555' }}>沒有任務</p>
       <p style={{ fontSize:14, color:'#999', marginTop:4 }}>去 Capture 頁記錄第一個任務</p>
+    </div>
+  )
+}
+
+function SearchEmpty() {
+  return (
+    <div style={{ textAlign:'center', paddingTop:60 }}>
+      <div style={{ fontSize:40, marginBottom:12 }}>🔍</div>
+      <p style={{ fontSize:16, fontWeight:600, color:'#555' }}>沒有符合的任務</p>
+      <p style={{ fontSize:14, color:'#999', marginTop:4 }}>換個關鍵字或清除搜尋試試</p>
     </div>
   )
 }
