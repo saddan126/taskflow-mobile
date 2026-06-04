@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTasks, useUndoTask, setUndoTask } from '../hooks/useTasks'
 import { useLongPress } from '../hooks/useLongPress'
+import { usePullToRefresh, PullIndicator } from '../hooks/usePullToRefresh'
 import { useCategories } from '../hooks/useCategories'
 import type { Task } from '../lib/supabase'
 
@@ -17,9 +18,10 @@ export default function Tasks() {
   const nav = useNavigate()
   const [activeCat, setActiveCat] = useState<string>('')
   const [query, setQuery]         = useState('')
-  const { rootTasks, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError } = useTasks(activeCat || undefined)
+  const { rootTasks, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError, refresh } = useTasks(activeCat || undefined)
   const { categories } = useCategories()
   const undo = useUndoTask()
+  const { scrollRef, pull, refreshing } = usePullToRefresh(refresh)
 
   // Title search, stacked on top of the (server-side) category filter. Front-end
   // only: case-insensitive substring match on the title, never the detail.
@@ -79,7 +81,9 @@ export default function Tasks() {
           <Spinner />
         </div>
       ) : (
-        <div style={{ flex:1, overflowY:'auto', padding:'12px 16px' }}>
+        <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overscrollBehaviorY:'contain', position:'relative', padding:'12px 16px' }}>
+          <PullIndicator pull={pull} refreshing={refreshing} />
+          <div style={{ transform:`translateY(${refreshing ? 44 : pull}px)`, transition: pull > 0 ? 'none' : 'transform .2s ease' }}>
           {pending.length === 0 && completed.length === 0 && (
             q ? <SearchEmpty /> : <Empty />
           )}
@@ -116,6 +120,7 @@ export default function Tasks() {
           </div>
 
           <div style={{ height:24 }} />
+          </div>
         </div>
       )}
 

@@ -93,8 +93,12 @@ export function useTasks(categoryId?: string) {
   // Transient toast for write failures (offline / network). Auto-clears.
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null)
+  // `silent` skips the page-level loading flag (used by pull-to-refresh, which
+  // shows its own indicator and keeps the list visible). A silent failure also
+  // surfaces the shared toast instead of the unshown `error` state.
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
+    setError(null)
     try {
       let q = supabase
         .from('tasks')
@@ -115,8 +119,15 @@ export function useTasks(categoryId?: string) {
       setDeps(depData ?? [])
     } catch (e: any) {
       setError(e.message ?? 'Failed to load')
+      if (opts?.silent) {
+        setActionError(
+          (await hasValidSession())
+            ? '暫時無法更新，請稍後再試'
+            : '登入狀態已失效，請重新登入後再試'
+        )
+      }
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
     }
   }, [categoryId])
 
@@ -316,5 +327,6 @@ export function useTasks(categoryId?: string) {
     toggleStar, softDelete, restoreTask,
     actionError,
     reload: load,
+    refresh: () => load({ silent: true }),
   }
 }

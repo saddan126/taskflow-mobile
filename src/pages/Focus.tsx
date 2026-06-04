@@ -1,5 +1,6 @@
 import { useTasks, useUndoTask, setUndoTask, daysFromToday } from '../hooks/useTasks'
 import { useLongPress } from '../hooks/useLongPress'
+import { usePullToRefresh, PullIndicator } from '../hooks/usePullToRefresh'
 import { useCategories } from '../hooks/useCategories'
 import type { Task } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
@@ -158,10 +159,11 @@ function Section({ label, accent, tasks, onToggle, onTap, onToggleStar, onDelete
 
 export default function Focus() {
   const nav = useNavigate()
-  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError } = useTasks()
+  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError, refresh } = useTasks()
   const { categories } = useCategories()
   const catMap = new Map(categories.map(c => [c.id, c]))
   const undo = useUndoTask()
+  const { scrollRef, pull, refreshing } = usePullToRefresh(refresh)
 
   const blocked = pending.filter(t => blockedIds.has(t.id))
   const total   = overdue.length + dueToday.length + upcoming.length
@@ -169,7 +171,9 @@ export default function Focus() {
   if (loading) return <LoadingScreen />
 
   return (
-    <div style={{ height:'100%', overflowY:'auto', background:C.b1 }}>
+    <div ref={scrollRef} style={{ height:'100%', overflowY:'auto', overscrollBehaviorY:'contain', position:'relative', background:C.b1 }}>
+      <PullIndicator pull={pull} refreshing={refreshing} />
+      <div style={{ transform:`translateY(${refreshing ? 44 : pull}px)`, transition: pull > 0 ? 'none' : 'transform .2s ease' }}>
       <div style={{ padding:'20px 16px 24px', paddingTop:'calc(20px + env(safe-area-inset-top))' }}>
         <h1 style={{ fontSize:28, fontWeight:800, color:C.t1, letterSpacing:'-0.03em', marginBottom:4 }}>
           今日焦點
@@ -205,6 +209,7 @@ export default function Focus() {
           onToggle={toggleComplete} onTap={id=>nav(`/task/${id}`)}
           onToggleStar={toggleStar} onDelete={softDelete}
           blockedIds={blockedIds} catMap={catMap} />
+      </div>
       </div>
 
       {undo && (
