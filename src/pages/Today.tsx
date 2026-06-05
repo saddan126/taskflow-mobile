@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDailyMetrics, type DailyMetric } from '../hooks/useDailyMetrics'
+import { useDailyRhythm, type DailyRhythmItem } from '../hooks/useDailyRhythm'
 
 const C = {
   acc:'#4f6ef7', t1:'#111', t2:'#555', t3:'#999',
@@ -8,6 +9,8 @@ const C = {
 
 export default function Today() {
   const { metrics, logs, loading, actionError, saveValue } = useDailyMetrics()
+  const { items: rhythmItems, logs: rhythmLogs, loading: rhythmLoading,
+          actionError: rhythmError, setCount } = useDailyRhythm()
 
   const [values, setValues]       = useState<Record<string, string>>({})  // metric_id → input text
   const [savedFlash, setSavedFlash] = useState(false)
@@ -67,6 +70,12 @@ export default function Today() {
   const onBlur = (m: DailyMetric) => {
     if (timers.current[m.id]) { clearTimeout(timers.current[m.id]); delete timers.current[m.id] }
     void commit(m, valuesRef.current[m.id] ?? '')
+  }
+
+  // Rhythm dot tap → set today's count (clamped in the hook); flash on success.
+  const handleSet = async (item: DailyRhythmItem, n: number) => {
+    const ok = await setCount(item, n)
+    if (ok) flashSaved()
   }
 
   return (
@@ -130,10 +139,79 @@ export default function Today() {
           </div>
         )}
 
-        {/* ── 每日節律 ── 階段 5-B 預留位置，這次不實作 */}
+        {/* ── 每日節律 ── */}
+        <div style={{ height:20 }} />
+        <SectionLabel>每日節律</SectionLabel>
+        {rhythmLoading ? (
+          <Spinner />
+        ) : rhythmItems.length === 0 ? (
+          <EmptyRhythm />
+        ) : (
+          <div style={{ background:'#fff', borderRadius:16, overflow:'hidden',
+                        boxShadow:'0 1px 4px rgba(0,0,0,.06)' }}>
+            {rhythmItems.map((it, i) => {
+              const log    = rhythmLogs[it.id]
+              const target = log ? log.target_count_snapshot : it.target_count
+              const count  = log ? log.completed_count : 0
+              const done   = target > 0 && count >= target
+              return (
+                <div key={it.id} style={{
+                  display:'flex', alignItems:'center', gap:12,
+                  padding:'14px 16px',
+                  borderTop: i > 0 ? `1px solid ${C.b1}` : 'none',
+                }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:15, fontWeight:600, color: done ? C.grn : C.t1 }}>
+                      {it.title}
+                    </div>
+                    <div style={{ fontSize:12, color: done ? C.grn : C.t3, marginTop:2, fontWeight: done ? 600 : 400 }}>
+                      {done ? '✓ 今日完成' : `${count} / ${target} ${it.unit_label ?? ''}`}
+                    </div>
+                  </div>
+                  <Dots target={target} count={count} onSet={n => handleSet(it, n)} />
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {actionError && <Toast text={actionError} />}
+      {(actionError || rhythmError) && <Toast text={(actionError || rhythmError) as string} />}
+    </div>
+  )
+}
+
+// Tap dot N → set count to N; tap the current last-filled dot → step back (N-1).
+function Dots({ target, count, onSet }: { target:number; count:number; onSet:(n:number)=>void }) {
+  if (target <= 0) return null
+  return (
+    <div style={{ display:'flex', flexWrap:'wrap', gap:8, justifyContent:'flex-end', maxWidth:184 }}>
+      {Array.from({ length: target }, (_, idx) => {
+        const j = idx + 1
+        const filled = j <= count
+        return (
+          <button key={j}
+            onClick={() => onSet(j === count ? j - 1 : j)}
+            aria-label={`設為 ${j === count ? j - 1 : j}`}
+            style={{
+              width:22, height:22, borderRadius:'50%', padding:0, cursor:'pointer',
+              border:`2px solid ${filled ? C.acc : C.b2}`,
+              background: filled ? C.acc : 'transparent',
+              transition:'background .12s, border-color .12s',
+            }} />
+        )
+      })}
+    </div>
+  )
+}
+
+function EmptyRhythm() {
+  return (
+    <div style={{ background:'#fff', borderRadius:16, padding:'28px 16px',
+                  textAlign:'center', boxShadow:'0 1px 4px rgba(0,0,0,.06)' }}>
+      <div style={{ fontSize:32, marginBottom:8 }}>🌀</div>
+      <p style={{ fontSize:14, color:C.t2, fontWeight:600 }}>目前沒有進行中的節律</p>
+      <p style={{ fontSize:13, color:C.t3, marginTop:4 }}>可在桌面版新增或管理節律項目</p>
     </div>
   )
 }
