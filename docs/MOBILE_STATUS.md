@@ -1,5 +1,5 @@
 # Liana 手機版狀態文件
-> 最後更新：2026-06-03
+> 最後更新：2026-08-05
 
 ## 技術架構
 - **框架**：React 18 + TypeScript，建置工具 Vite 5，路由用 `react-router-dom` v6（`BrowserRouter`）。UI 全部為 inline style，無 CSS 框架。
@@ -17,6 +17,7 @@
 - **分類顯示**（唯讀）：`useCategories` 讀取分類，用於篩選與色點顯示。
 - **PWA 安裝**（完整）：可加到主畫面、autoUpdate。
 - **今日狀態 / Today**（階段 5-A／5-B）：第 4 個分頁（記錄 / 焦點 / 今日 / 任務）。含「每日指標」今日輸入（防抖 ~900ms 自動儲存）與「每日節律」今日打點（圓點點擊、即時樂觀更新、達標顯示「✓ 今日完成」）；成功皆顯示低調「已儲存」、失敗沿用 0A 提示。
+- **更替項目唯讀列表 / Maintenance（階段 1.5-B，B-1 已完成）**：第 5 個分頁（記錄 / 焦點 / 今日 / 任務 / 更替），路由 `/maintenance`。列出啟用中（`is_active = 1`）且未刪除的更替項目，依 `next_due_at` 由近到遠排序；逾期、以及在該項目自己的 `remind_days_before` 天數內到期者以顏色區隔。新增 `MaintenanceItem` 型別（`src/lib/supabase.ts`）與 `useMaintenanceItems` hook（`src/hooks/useMaintenanceItems.ts`）。**本階段完全唯讀**：僅對 `maintenance_items` 執行 `select`，未對 `maintenance_items`、`maintenance_events`、`tasks` 任何資料表做 insert / update / delete；項目的新增、編輯、刪除、完成登記仍待後續階段（B-2 起）。
 
 ## 尚未實作的功能（對比桌面版）
 以下為桌面版已有、手機版尚未實作者：

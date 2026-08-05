@@ -2,11 +2,12 @@ import { Component, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, signIn, signOut } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
-import Capture    from './pages/Capture'
-import Focus      from './pages/Focus'
-import Tasks      from './pages/Tasks'
-import TaskDetail from './pages/TaskDetail'
-import Today      from './pages/Today'
+import Capture     from './pages/Capture'
+import Focus       from './pages/Focus'
+import Tasks       from './pages/Tasks'
+import TaskDetail  from './pages/TaskDetail'
+import Today       from './pages/Today'
+import Maintenance from './pages/Maintenance'
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
@@ -22,10 +23,11 @@ function BottomNav() {
   const nav  = useNavigate()
 
   const tabs = [
-    { path:'/',       label:'記錄', icon: <CaptureIcon /> },
-    { path:'/focus',  label:'焦點', icon: <FocusIcon /> },
-    { path:'/today',  label:'今日', icon: <TodayIcon /> },
-    { path:'/tasks',  label:'任務', icon: <TasksIcon /> },
+    { path:'/',            label:'記錄', icon: <CaptureIcon /> },
+    { path:'/focus',       label:'焦點', icon: <FocusIcon /> },
+    { path:'/today',       label:'今日', icon: <TodayIcon /> },
+    { path:'/tasks',       label:'任務', icon: <TasksIcon /> },
+    { path:'/maintenance', label:'更替', icon: <MaintenanceIcon /> },
   ]
 
   const active = (path: string) => {
@@ -46,7 +48,7 @@ function BottomNav() {
             style={{
               flex:1, display:'flex', flexDirection:'column',
               alignItems:'center', justifyContent:'center',
-              gap:3, padding:'10px 0',
+              gap:3, padding:'10px 2px', minWidth:0,
               background:'none', border:'none', cursor:'pointer',
               color: isActive ? C.acc : C.t3,
             }}>
@@ -54,7 +56,7 @@ function BottomNav() {
                            transition:'transform .15s' }}>
               {tab.icon}
             </span>
-            <span style={{ fontSize:10, fontWeight: isActive ? 700 : 500 }}>
+            <span style={{ fontSize:10, fontWeight: isActive ? 700 : 500, whiteSpace:'nowrap' }}>
               {tab.label}
             </span>
           </button>
@@ -78,8 +80,9 @@ function AppShell({ session }: { session: Session }) {
           <Route path="/"          element={<Capture />} />
           <Route path="/focus"     element={<Focus />} />
           <Route path="/today"     element={<Today />} />
-          <Route path="/tasks"     element={<Tasks />} />
-          <Route path="/task/:id"  element={<TaskDetail />} />
+          <Route path="/tasks"       element={<Tasks />} />
+          <Route path="/maintenance" element={<Maintenance />} />
+          <Route path="/task/:id"    element={<TaskDetail />} />
         </Routes>
       </div>
       {showNav && <BottomNav />}
@@ -286,6 +289,16 @@ function TodayIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <path d="M3 12h4l2-6 4 14 2-8h6" stroke="currentColor" strokeWidth="1.8"
             strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function MaintenanceIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" strokeWidth="1.8"
+            strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4.5 15a8 8 0 0014.5 3M19.5 9A8 8 0 005 6" stroke="currentColor"
+            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }

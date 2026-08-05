@@ -23,7 +23,31 @@ export interface Task {
   created_at:      string
   updated_at:      string
   deleted_at:      string | null
+  task_type:       string | null
+  maintenance_item_id: string | null
   user_id:         string
+}
+
+// maintenance_items is read-only on mobile (Phase 1.5-B: display only, no writes).
+export interface MaintenanceItem {
+  id:                  string
+  user_id:             string
+  name:                string
+  category_id:         string | null
+  location:            string | null
+  notes:               string | null
+  maintenance_type:    string
+  cycle_value:         number
+  cycle_unit:          string   // 'day' | 'week' | 'month'
+  schedule_anchor:     string | null
+  last_handled_at:     string | null
+  next_due_at:         string | null
+  remind_days_before:  number
+  current_task_id:     string | null
+  is_active:           number
+  created_at:          string
+  updated_at:          string
+  deleted_at:          string | null
 }
 
 export interface Category {
