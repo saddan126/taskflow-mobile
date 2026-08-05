@@ -17,7 +17,8 @@
 - **分類顯示**（唯讀）：`useCategories` 讀取分類，用於篩選與色點顯示。
 - **PWA 安裝**（完整）：可加到主畫面、autoUpdate。
 - **今日狀態 / Today**（階段 5-A／5-B）：第 4 個分頁（記錄 / 焦點 / 今日 / 任務）。含「每日指標」今日輸入（防抖 ~900ms 自動儲存）與「每日節律」今日打點（圓點點擊、即時樂觀更新、達標顯示「✓ 今日完成」）；成功皆顯示低調「已儲存」、失敗沿用 0A 提示。
-- **更替項目唯讀列表 / Maintenance（階段 1.5-B，B-1 已完成）**：第 5 個分頁（記錄 / 焦點 / 今日 / 任務 / 更替），路由 `/maintenance`。列出啟用中（`is_active = 1`）且未刪除的更替項目，依 `next_due_at` 由近到遠排序；逾期、以及在該項目自己的 `remind_days_before` 天數內到期者以顏色區隔。新增 `MaintenanceItem` 型別（`src/lib/supabase.ts`）與 `useMaintenanceItems` hook（`src/hooks/useMaintenanceItems.ts`）。**本階段完全唯讀**：僅對 `maintenance_items` 執行 `select`，未對 `maintenance_items`、`maintenance_events`、`tasks` 任何資料表做 insert / update / delete；項目的新增、編輯、刪除、完成登記仍待後續階段（B-2 起）。
+- **更替項目唯讀列表 / Maintenance（階段 1.5-B，B-1 已完成）**：第 5 個分頁（記錄 / 焦點 / 今日 / 任務 / 更替），路由 `/maintenance`。列出啟用中（`is_active = 1`）且未刪除的更替項目，依 `next_due_at` 由近到遠排序；逾期、以及在該項目自己的 `remind_days_before` 天數內到期者以顏色區隔。新增 `MaintenanceItem` 型別（`src/lib/supabase.ts`）與 `useMaintenanceItems` hook（`src/hooks/useMaintenanceItems.ts`）。
+- **新增更替項目 / Maintenance（階段 1.5-B，B-2 已完成）**：更替頁加入「＋ 新增」表單（名稱、週期數字 + 單位下拉〔天/週/月〕、上次處理日〔預設 `getDailyDateKey()` 今天，可修改〕、備註選填），前端驗證名稱非空、週期數字 ≥ 1。`useMaintenanceItems.createMaintenanceItem` 沿用 `useTasks.createTask` 模式：先取 session、無 session 拋 `NOT_AUTHENTICATED`、樂觀插入（依 `next_due_at` 排序）、失敗 rollback 並依 `hasValidSession` 分類為 `WRITE_FAILED` / `SESSION_EXPIRED`。新增 `calcNextDueAt(lastHandledAt, cycleValue, cycleUnit)`（`src/hooks/useMaintenanceItems.ts`），逐字元鏡射桌面版 `electron/db/maintenance.ts` 的 `calcNextDueAt`（day/week/month + `toISOString().slice(0,10)`，刻意不做月底夾斷）。建立成功後畫面提示「對應的更替任務會在桌面開啟後產生」。**本階段僅對 `maintenance_items` 執行 insert，未觸碰 `tasks` 或 `maintenance_events` 任何資料列**（不寫 `generation_key`，該邏輯留給桌面端）；項目的編輯、刪除、完成登記仍待後續階段。
 
 ## 尚未實作的功能（對比桌面版）
 以下為桌面版已有、手機版尚未實作者：
