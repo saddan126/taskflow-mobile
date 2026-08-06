@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMaintenanceItems } from '../hooks/useMaintenanceItems'
 import { daysFromToday, getDailyDateKey } from '../hooks/useTasks'
 import type { MaintenanceItem } from '../lib/supabase'
@@ -146,17 +146,36 @@ export default function Maintenance() {
   const [showForm, setShowForm]         = useState(false)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [recordingId, setRecordingId]   = useState<string | null>(null)
+  // 1.5-B 收尾：recordFallbackCompletion 若拋出未捕捉例外（例如離線時 fetch
+  // 直接 reject），handleConfirmRecord 需要一個管道告知使用者，同時不依賴
+  // useMaintenanceItems 內的 actionError（那個只在函式「正常回傳」時才會被設）。
+  const [fallbackError, setFallbackError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!fallbackError) return
+    const t = setTimeout(() => setFallbackError(null), 3500)
+    return () => clearTimeout(t)
+  }, [fallbackError])
 
   if (loading) return <LoadingScreen />
 
   // B-4c: confirm → record. `recordFallbackCompletion` itself reloads the
   // list on success (and on the "advanced but event-log failed" case), so the
   // new next_due_at / waiting flag reflect immediately without extra code here.
+  // 1.5-B 收尾：加上 try/finally——recordingId 無論成功、失敗、或
+  // recordFallbackCompletion 拋出例外都一定要清掉，否則 B-4c-1 的全域鎖
+  // （所有項目的「記錄完成」連結）會永久停用，直到重新整理頁面。
+  // 不調整鎖定設計本身（confirmingId/recordingId 的語意不變），只補上這個缺口。
   const handleConfirmRecord = async (itemId: string) => {
     setRecordingId(itemId)
-    await recordFallbackCompletion(itemId)
-    setRecordingId(null)
-    setConfirmingId(null)
+    try {
+      await recordFallbackCompletion(itemId)
+    } catch {
+      setFallbackError('暫時無法完成，請稍後再試')
+    } finally {
+      setRecordingId(null)
+      setConfirmingId(null)
+    }
   }
 
   // B-4c-1: while any item is mid-write, refuse to open a confirm dialog for
@@ -230,6 +249,7 @@ export default function Maintenance() {
 
       {actionError ? <Toast text={actionError} kind="error" />
         : actionNotice ? <Toast text={actionNotice} kind="notice" />
+        : fallbackError ? <Toast text={fallbackError} kind="error" />
         : error ? <Toast text={error} kind="error" /> : null}
     </div>
   )
