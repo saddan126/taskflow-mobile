@@ -28,7 +28,8 @@ export interface Task {
   user_id:         string
 }
 
-// maintenance_items is read-only on mobile (Phase 1.5-B: display only, no writes).
+// maintenance_items: mobile reads, plus insert (B-2) and the completion-flow
+// update of last_handled_at/next_due_at (B-4a). Mobile never deletes a row.
 export interface MaintenanceItem {
   id:                  string
   user_id:             string
@@ -48,6 +49,24 @@ export interface MaintenanceItem {
   created_at:          string
   updated_at:          string
   deleted_at:          string | null
+}
+
+// maintenance_events is mobile write-only (Phase 1.5-B, B-4a: logged when a
+// maintenance task is completed on the current round). No reads defined yet.
+export interface MaintenanceEvent {
+  id:                        string
+  user_id:                   string
+  maintenance_item_id:       string
+  task_id:                   string
+  event_type:                string
+  event_date:                string
+  previous_last_handled_at:  string | null
+  previous_next_due_at:      string | null
+  generated_next_task_id:    string | null
+  reverted_at:               string | null
+  created_at:                string
+  updated_at:                string
+  deleted_at:                string | null
 }
 
 export interface Category {

@@ -19,6 +19,7 @@
 - **今日狀態 / Today**（階段 5-A／5-B）：第 4 個分頁（記錄 / 焦點 / 今日 / 任務）。含「每日指標」今日輸入（防抖 ~900ms 自動儲存）與「每日節律」今日打點（圓點點擊、即時樂觀更新、達標顯示「✓ 今日完成」）；成功皆顯示低調「已儲存」、失敗沿用 0A 提示。
 - **更替項目唯讀列表 / Maintenance（階段 1.5-B，B-1 已完成）**：第 5 個分頁（記錄 / 焦點 / 今日 / 任務 / 更替），路由 `/maintenance`。列出啟用中（`is_active = 1`）且未刪除的更替項目，依 `next_due_at` 由近到遠排序；逾期、以及在該項目自己的 `remind_days_before` 天數內到期者以顏色區隔。新增 `MaintenanceItem` 型別（`src/lib/supabase.ts`）與 `useMaintenanceItems` hook（`src/hooks/useMaintenanceItems.ts`）。
 - **新增更替項目 / Maintenance（階段 1.5-B，B-2 已完成）**：更替頁加入「＋ 新增」表單（名稱、週期數字 + 單位下拉〔天/週/月〕、上次處理日〔預設 `getDailyDateKey()` 今天，可修改〕、備註選填），前端驗證名稱非空、週期數字 ≥ 1。`useMaintenanceItems.createMaintenanceItem` 沿用 `useTasks.createTask` 模式：先取 session、無 session 拋 `NOT_AUTHENTICATED`、樂觀插入（依 `next_due_at` 排序）、失敗 rollback 並依 `hasValidSession` 分類為 `WRITE_FAILED` / `SESSION_EXPIRED`。新增 `calcNextDueAt(lastHandledAt, cycleValue, cycleUnit)`（`src/hooks/useMaintenanceItems.ts`），逐字元鏡射桌面版 `electron/db/maintenance.ts` 的 `calcNextDueAt`（day/week/month + `toISOString().slice(0,10)`，刻意不做月底夾斷）。建立成功後畫面提示「對應的更替任務會在桌面開啟後產生」。**本階段僅對 `maintenance_items` 執行 insert，未觸碰 `tasks` 或 `maintenance_events` 任何資料列**（不寫 `generation_key`，該邏輯留給桌面端）；項目的編輯、刪除、完成登記仍待後續階段。
+- **完成更替任務 / Maintenance（階段 1.5-B，B-4a 已完成）**：`useTasks.toggleComplete` 對 `task_type === 'maintenance' && maintenance_item_id` 的任務改走 `toggleMaintenanceComplete`（Focus / Tasks / TaskDetail 三頁沿用同一個勾選入口，無需各自改動）。流程：讀取對應 `maintenance_items`（查無則中止不寫入）→ 比對 `task.due_date` 是否等於 `item.next_due_at`（不相等只標記任務完成、不推進週期，提示「這筆不是目前這一輪，已標記完成但未推進週期」）→ 相等才把任務 `completed` 改 1 → 用 `getDailyDateKey()` 取今天、`calcNextDueAt()`（沿用 B-2 那份，未另寫）算下次到期日，兩者皆須通過 `/^\d{4}-\d{2}-\d{2}$/` 格式驗證才繼續，否則整段回捲、任務退回未完成 → 通過後 UPDATE `maintenance_items`（`last_handled_at` / `next_due_at` / `updated_at`），失敗則把任務 `completed` 退回 0 → 最後 INSERT 一筆 `maintenance_events`（`event_type: 'complete'`，記錄推進前的 `last_handled_at` / `next_due_at`），此步失敗不回捲前面已成功的步驟，只提示「已完成並推進，但紀錄寫入失敗」。**手機端完全不 INSERT `tasks`**（下一輪任務由桌面產生）；**更替任務的「取消完成」（1→0）一律拒絕、不寫入任何資料**，提示「更替任務完成後無法在手機取消，請到桌面復原」。更替頁的到期日更新採「重新讀取」：`useMaintenanceItems` 在元件掛載時就會 `load()`，使用者切回更替頁分頁時（React Router 換路由會重新掛載該頁面）即讀到推進後的 `next_due_at`，未額外加程式碼。新增 `MaintenanceEvent` 型別（`src/lib/supabase.ts`）。所有訊息（含成功後的「下一輪任務會在桌面同步後產生」）沿用既有的 `actionError` 共用 toast 管道顯示，未另外新增成功樣式的提示元件。
 
 ## 尚未實作的功能（對比桌面版）
 以下為桌面版已有、手機版尚未實作者：
@@ -43,7 +44,7 @@
   - **註冊新帳號 / 忘記密碼**：登入畫面只有登入，無註冊或重設密碼。
 
 ## 與桌面版的資料同步
-- **共用的 Supabase 資料表**：`tasks`、`categories`、`task_dependencies`。手機與桌面連同一個 Supabase 專案（`svdtwblpjwdkjpvzsvpt`），以 `user_id` 區隔資料。
+- **共用的 Supabase 資料表**：`tasks`、`categories`、`task_dependencies`，另加 `maintenance_items`（讀 + 新增 + 完成流程 update，階段 1.5-B B-2／B-4a）與 `maintenance_events`（僅新增，B-4a）。手機與桌面連同一個 Supabase 專案（`svdtwblpjwdkjpvzsvpt`），以 `user_id` 區隔資料。
 - **目前同步狀況（手機建立的任務電腦是否看得到）**：可以。寫入的是同一個資料庫的同一張 `tasks` 表、同一個 `user_id`，桌面端重新載入即可看到手機建立的任務，反之亦然。
 - **已知同步問題**：
   - **無 realtime 訂閱**：手機端只在元件掛載或切換分類時 `load()`，不會即時收到其他裝置的變更。**階段 4 已加入下拉刷新**：在 Focus / Tasks 列表頂端下拉即可手動重新抓取最新資料（保留目前的分類篩選、搜尋字與排序）；realtime 即時訂閱仍待評估。

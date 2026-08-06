@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase, type Task, type Dep } from '../lib/supabase'
+import { calcNextDueAt } from './useMaintenanceItems'
+
+// Plain-date guard for values about to be written as last_handled_at /
+// next_due_at (Phase 1.5-B, B-4a) — never write anything else shaped.
+const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 // 全手機版唯一的日期算法：一律用「本地時間」，並套用凌晨 4 點換日，行為與桌面版一致。
@@ -147,6 +152,13 @@ export function useTasks(categoryId?: string) {
   // Returns true on success, false on failure — callers may use this to keep
   // their own local state in sync without duplicating rollback logic.
   const toggleComplete = async (task: Task): Promise<boolean> => {
+    // Maintenance tasks (Phase 1.5-B, B-4a) follow a different write flow —
+    // completing one also advances the linked maintenance_items row and logs
+    // a maintenance_events row. Everything else keeps the plain toggle below.
+    if (task.task_type === 'maintenance' && task.maintenance_item_id) {
+      return toggleMaintenanceComplete(task)
+    }
+
     const now       = new Date().toISOString()
     const prev      = task.completed
     const completed = prev === 1 ? 0 : 1
@@ -171,6 +183,113 @@ export function useTasks(categoryId?: string) {
       )
       return false
     }
+  }
+
+  // Complete a maintenance-linked task (Phase 1.5-B, B-4a). Mobile only ever
+  // flips completed 0→1 here — 1→0 is refused outright, no write at all; the
+  // revert lives on desktop. On success this also advances the linked
+  // maintenance_items row (last_handled_at / next_due_at) and logs a
+  // maintenance_events row. Mobile never inserts into tasks in this flow —
+  // the next occurrence is generated on desktop.
+  const toggleMaintenanceComplete = async (task: Task): Promise<boolean> => {
+    if (task.completed === 1) {
+      setActionError('更替任務完成後無法在手機取消，請到桌面復原')
+      return false
+    }
+
+    // a) Load the linked maintenance_items row.
+    const { data: item, error: itemErr } = await supabase
+      .from('maintenance_items')
+      .select('*')
+      .eq('id', task.maintenance_item_id as string)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (itemErr || !item) {
+      setActionError('找不到對應的更替項目，未寫入任何資料')
+      return false
+    }
+
+    // b) Gate: only this item's current round advances the cycle.
+    const isCurrentRound = task.due_date === item.next_due_at
+
+    // c) Mark the task complete. Optimistic, rolled back on any later failure.
+    const now = new Date().toISOString()
+    setTasks(p => p.map(t => t.id === task.id ? { ...t, completed: 1 } : t))
+    const { error: taskErr } = await supabase
+      .from('tasks').update({ completed: 1, updated_at: now }).eq('id', task.id)
+    if (taskErr) {
+      setTasks(p => p.map(t => t.id === task.id ? { ...t, completed: 0 } : t))
+      setActionError(
+        (await hasValidSession())
+          ? '暫時無法更新，請稍後再試'
+          : '登入狀態已失效，請重新登入後再試'
+      )
+      return false
+    }
+
+    if (!isCurrentRound) {
+      // Completed, but not this round — never advance the cycle for it.
+      setActionError('這筆不是目前這一輪，已標記完成但未推進週期')
+      return true
+    }
+
+    const rollbackTaskComplete = async () => {
+      setTasks(p => p.map(t => t.id === task.id ? { ...t, completed: 0 } : t))
+      await supabase.from('tasks')
+        .update({ completed: 0, updated_at: new Date().toISOString() }).eq('id', task.id)
+    }
+
+    // d) Compute the advance, and refuse to write anything malformed.
+    const today       = getDailyDateKey()
+    const newNextDueAt = calcNextDueAt(today, item.cycle_value, item.cycle_unit)
+    if (!PLAIN_DATE_RE.test(today) || !PLAIN_DATE_RE.test(newNextDueAt)) {
+      await rollbackTaskComplete()
+      setActionError('日期格式錯誤，已取消本次完成')
+      return false
+    }
+
+    // e) Advance the maintenance item.
+    const prevLastHandledAt = item.last_handled_at
+    const prevNextDueAt     = item.next_due_at
+    const { error: itemUpdErr } = await supabase
+      .from('maintenance_items')
+      .update({ last_handled_at: today, next_due_at: newNextDueAt, updated_at: new Date().toISOString() })
+      .eq('id', item.id)
+
+    if (itemUpdErr) {
+      await rollbackTaskComplete()
+      setActionError('推進更替週期失敗，已取消本次完成')
+      return false
+    }
+
+    // f) Log the event. a–e already committed, so a failure here is reported,
+    // not rolled back — the task stays complete and the item stays advanced.
+    const { data: { session } } = await supabase.auth.getSession()
+    const eventNow = new Date().toISOString()
+    const { error: eventErr } = await supabase.from('maintenance_events').insert({
+      id: crypto.randomUUID(),
+      user_id: session?.user.id,
+      maintenance_item_id: item.id,
+      task_id: task.id,
+      event_type: 'complete',
+      event_date: today,
+      previous_last_handled_at: prevLastHandledAt,
+      previous_next_due_at: prevNextDueAt,
+      generated_next_task_id: null,
+      reverted_at: null,
+      created_at: eventNow,
+      updated_at: eventNow,
+      deleted_at: null,
+    })
+
+    if (eventErr) {
+      setActionError('已完成並推進，但紀錄寫入失敗')
+      return true
+    }
+
+    setActionError('已完成並推進週期，下一輪任務會在桌面同步後產生')
+    return true
   }
 
   const createTask = async (title: string, catId: string | null, dueDate?: string | null) => {
