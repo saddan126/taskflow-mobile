@@ -24,8 +24,9 @@
   - **視覺標記**：Tasks / Focus 的任務列、TaskDetail 標題列，對 `task_type === 'maintenance'` 的任務加上綠色葉子符號 🌿（僅符號、無文字），沿用各頁既有的 🔒／badge 視覺慣例（`src/pages/Tasks.tsx`、`src/pages/Focus.tsx`、`src/pages/TaskDetail.tsx`）。Today 頁只顯示每日指標／節律，本來就不列出 `tasks`，故未加標記。
   - **禁止手機刪除更替任務**：guard 加在 `useTasks.softDelete` 這一個根源函式（`task.task_type === 'maintenance'` 直接擋下、不寫入，提示「更替任務由系統產生，請到桌面刪除對應的更替項目」），Tasks/Focus 的長按刪除與 TaskDetail 的「刪除任務」按鈕三個入口都共用同一個 `softDelete`，一次擋住全部，未逐頁加判斷。
   - **中性提示管道**：`useTasks` 新增 `actionNotice`（與 `actionError`並存、各自 3.5 秒自動清除）。B-4a 的「完成並推進成功」與「這筆不是目前這一輪，已標記完成但未推進週期」兩則非失敗訊息改走 `actionNotice`；事件記錄失敗（`已完成並推進，但紀錄寫入失敗`）與取消/刪除被拒等真正失敗訊息維持 `actionError`。成功訊息文字：「已完成並推進週期，下一輪任務會在桌面同步後產生」。Focus / Tasks / TaskDetail 三頁各自的 `Toast` 元件加上 `kind: 'error' | 'notice'` 樣式分支（notice 沿用專案既有的綠色成功配色），未抽成跨檔共用元件（沿用既有三份重複寫法，已於 `docs/BACKLOG.md` 第 4 條記錄重複度提高）。
-  - **「等待桌面產生任務」標記**：`useMaintenanceItems` 新增唯讀查詢（`tasks` 表 `task_type='maintenance' AND completed=0 AND deleted_at IS NULL`，與 `maintenance_items` 查詢並行），比對每個項目的 `next_due_at` 是否有對應的未完成任務；沒有則在更替頁該項目下方顯示「⏳ 等待桌面產生任務」。此查詢失敗時不影響項目列表本身（沿用 `useTasks` 讀取 `task_dependencies` 時同樣的「輔助查詢失敗則預設為空」慣例）。全程只有 `select`，無任何寫入。
+  - **「等待桌面產生任務」標記**：`useMaintenanceItems` 新增唯讀查詢（`tasks` 表 `task_type='maintenance' AND completed=0 AND deleted_at IS NULL`，與 `maintenance_items` 查詢並行），比對每個項目的 `next_due_at` 是否有對應的未完成任務；沒有則在更替頁該項目下方顯示「⏳ 等待桌面產生任務」。全程只有 `select`，無任何寫入。（此查詢失敗時的行為見下方 B-4b-1 修正。）
   - **週期輸入改嚴格驗證正整數**：新增更替項目表單的週期數字欄位改用 `/^[1-9]\d*$/` 驗證，輸入小數或非數字時不通過驗證、不送出，並在欄位下方顯示提示文字「週期需為正整數（不可為小數或非數字）」，不再用 `parseInt` 靜默截斷（`src/pages/Maintenance.tsx`）。
+- **修正「等待桌面產生任務」誤報（階段 1.5-B，B-4b-1 已完成）**：B-4b 原本在 `tasks` 補充查詢失敗時預設為空 Set，等同誤判「沒有任何開放任務」，導致每個項目都跳出假的等待提示。改為新增 `openTaskKeysKnown` 旗標（`src/hooks/useMaintenanceItems.ts`）：查詢成功才更新 keys 並標記為已知，查詢失敗則只標記為未知、保留舊資料不覆蓋；`isWaitingForTask` 在未知狀態下一律回傳 `false`（不顯示標記），而非誤判為「沒有任務」。成功時行為與 B-4b 完全相同。純邏輯修正，未新增任何查詢或寫入路徑。
 
 ## 尚未實作的功能（對比桌面版）
 以下為桌面版已有、手機版尚未實作者：

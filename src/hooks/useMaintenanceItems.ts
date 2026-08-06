@@ -23,6 +23,10 @@ export function useMaintenanceItems() {
   // (not completed, not deleted) maintenance task. Lets the page show "等待
   // 桌面產生任務" for an item whose current round has no matching task yet.
   const [openTaskKeys, setOpenTaskKeys] = useState<Set<string>>(new Set())
+  // B-4b-1: whether the query above is known-good. If it failed, an empty
+  // Set is indistinguishable from "no open tasks" — so isWaitingForTask must
+  // suppress the badge entirely rather than reporting a false "waiting".
+  const [openTaskKeysKnown, setOpenTaskKeysKnown] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
@@ -46,13 +50,22 @@ export function useMaintenanceItems() {
       ])
       if (err) throw err
       setItems((data ?? []) as MaintenanceItem[])
-      // Best-effort: a failure here never blocks the item list itself (same
-      // "supplementary query defaults to empty" convention as useTasks' deps).
-      const keys = new Set<string>()
-      for (const t of taskRes.data ?? []) {
-        if (t.maintenance_item_id && t.due_date) keys.add(`${t.maintenance_item_id}|${t.due_date}`)
+      // A failure here never blocks the item list itself (same "supplementary
+      // query" convention as useTasks' deps) — but unlike that convention, we
+      // must NOT default to an empty Set on failure: that would read as "no
+      // open tasks" and falsely flag every item as waiting. Only update the
+      // keys (and mark them known-good) when this query actually succeeded;
+      // on failure, mark them unknown so isWaitingForTask suppresses the badge.
+      if (taskRes.error) {
+        setOpenTaskKeysKnown(false)
+      } else {
+        const keys = new Set<string>()
+        for (const t of taskRes.data ?? []) {
+          if (t.maintenance_item_id && t.due_date) keys.add(`${t.maintenance_item_id}|${t.due_date}`)
+        }
+        setOpenTaskKeys(keys)
+        setOpenTaskKeysKnown(true)
       }
-      setOpenTaskKeys(keys)
     } catch (e: any) {
       setError(
         (await hasValidSession())
@@ -68,9 +81,11 @@ export function useMaintenanceItems() {
 
   // Whether this item's current round (next_due_at) has no matching open task
   // yet — i.e. desktop hasn't generated it. Null next_due_at has no "round" to
-  // wait for, so it's never flagged.
+  // wait for, so it's never flagged; neither is any item while the open-task
+  // query itself is in an unknown (failed) state (B-4b-1) — unknown is not
+  // the same as "no tasks", so we suppress rather than guess.
   const isWaitingForTask = (item: MaintenanceItem): boolean =>
-    !!item.next_due_at && !openTaskKeys.has(`${item.id}|${item.next_due_at}`)
+    openTaskKeysKnown && !!item.next_due_at && !openTaskKeys.has(`${item.id}|${item.next_due_at}`)
 
   // Create a maintenance item. Requires a valid session (never fakes success
   // offline / logged-out), optimistic-inserts into the sorted list, and rolls
