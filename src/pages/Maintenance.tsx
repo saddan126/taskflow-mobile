@@ -28,13 +28,16 @@ function dueInfo(item: MaintenanceItem): { text: string; state: DueState } {
 }
 
 function ItemRow({
-  item, waiting, confirming, recording,
+  item, waiting, confirming, recording, linkDisabled,
   onRequestConfirm, onCancelConfirm, onConfirm,
 }: {
   item: MaintenanceItem
   waiting: boolean
   confirming: boolean
   recording: boolean
+  // True while ANY item is mid-write (B-4c-1) — disables every other item's
+  // entry link so a second item can't be opened/confirmed concurrently.
+  linkDisabled: boolean
   onRequestConfirm: () => void
   onCancelConfirm: () => void
   onConfirm: () => void
@@ -69,14 +72,18 @@ function ItemRow({
         )}
 
         {/* Fallback entry (B-4c): only ever shown for a currently-waiting
-            item, and never as a prominent primary button — small text link. */}
+            item, and never as a prominent primary button — small text link.
+            Disabled (not hidden) whenever any item is mid-write (B-4c-1). */}
         {waiting && !confirming && (
           <button
             onClick={onRequestConfirm}
+            disabled={linkDisabled}
             style={{
               marginTop:6, background:'none', border:'none', padding:0,
-              fontSize:12, fontWeight:600, color:C.acc, textDecoration:'underline',
-              cursor:'pointer',
+              fontSize:12, fontWeight:600,
+              color: linkDisabled ? C.t3 : C.acc,
+              textDecoration: linkDisabled ? 'none' : 'underline',
+              cursor: linkDisabled ? 'not-allowed' : 'pointer',
             }}
           >
             記錄完成
@@ -152,6 +159,14 @@ export default function Maintenance() {
     setConfirmingId(null)
   }
 
+  // B-4c-1: while any item is mid-write, refuse to open a confirm dialog for
+  // a different (or the same) item — this is the root-cause guard; the link's
+  // own `disabled` attribute is just the visible affordance for it.
+  const requestConfirm = (itemId: string) => {
+    if (recordingId !== null) return
+    setConfirmingId(itemId)
+  }
+
   return (
     <div style={{ height:'100%', overflowY:'auto', background:C.b1 }}>
       <div style={{ padding:'20px 16px 24px', paddingTop:'calc(20px + env(safe-area-inset-top))' }}>
@@ -205,7 +220,8 @@ export default function Maintenance() {
             waiting={isWaitingForTask(item)}
             confirming={confirmingId === item.id}
             recording={recordingId === item.id}
-            onRequestConfirm={() => setConfirmingId(item.id)}
+            linkDisabled={recordingId !== null}
+            onRequestConfirm={() => requestConfirm(item.id)}
             onCancelConfirm={() => setConfirmingId(null)}
             onConfirm={() => handleConfirmRecord(item.id)}
           />

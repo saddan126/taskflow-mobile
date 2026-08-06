@@ -35,7 +35,10 @@ export function useMaintenanceItems() {
   const [actionError, setActionError]   = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  // Returns whether the primary maintenance_items read succeeded (B-4c-1) —
+  // recordFallbackCompletion uses this to tell "reload failed" apart from
+  // "reload succeeded but nothing changed", so it can surface the right toast.
+  const load = useCallback(async (): Promise<boolean> => {
     setLoading(true)
     setError(null)
     try {
@@ -71,12 +74,14 @@ export function useMaintenanceItems() {
         setOpenTaskKeys(keys)
         setOpenTaskKeysKnown(true)
       }
+      return true
     } catch (e: any) {
       setError(
         (await hasValidSession())
           ? '暫時無法載入，請稍後再試'
           : '登入狀態已失效，請重新登入後再試'
       )
+      return false
     } finally {
       setLoading(false)
     }
@@ -218,15 +223,26 @@ export function useMaintenanceItems() {
       deleted_at: null,
     })
 
-    if (eventErr) {
+    // The item itself advanced regardless of (d) — reload BEFORE setting any
+    // toast (B-4c-1). `load()` flips `loading` back to false itself before
+    // this resolves, so the toast is only ever set once the page is back to
+    // its normal (non-loading) render — otherwise the early `if (loading)
+    // return <LoadingScreen />` in Maintenance.tsx would mount the toast
+    // without ever showing it, silently burning down its auto-dismiss timer
+    // while the spinner was up.
+    const reloadOk = await load()
+
+    if (!reloadOk) {
+      // The write itself already succeeded — say so, but be honest that the
+      // list on screen may now be stale rather than let a green toast imply
+      // everything (including the refresh) went through.
+      setActionError('已推進週期，但畫面重新整理失敗，可能未顯示最新狀態，請下拉重新整理')
+    } else if (eventErr) {
       setActionError('已推進週期，但紀錄寫入失敗')
     } else {
       setActionNotice('已推進週期，下一輪任務會在桌面同步後產生')
     }
 
-    // The item itself advanced regardless of (d) — reload so the new
-    // next_due_at and the "等待桌面產生任務" flag reflect it immediately.
-    await load()
     return true
   }
 
