@@ -3,8 +3,9 @@ import { supabase, type Task, type Dep } from '../lib/supabase'
 import { calcNextDueAt } from './useMaintenanceItems'
 
 // Plain-date guard for values about to be written as last_handled_at /
-// next_due_at (Phase 1.5-B, B-4a) — never write anything else shaped.
-const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// next_due_at (Phase 1.5-B, B-4a). Exported so the B-4c fallback-completion
+// flow in useMaintenanceItems reuses this one instead of writing a second copy.
+export const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 // 全手機版唯一的日期算法：一律用「本地時間」，並套用凌晨 4 點換日，行為與桌面版一致。

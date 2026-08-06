@@ -27,7 +27,18 @@ function dueInfo(item: MaintenanceItem): { text: string; state: DueState } {
   return { text: `${n} 天後到期`, state: 'normal' }
 }
 
-function ItemRow({ item, waiting }: { item: MaintenanceItem; waiting: boolean }) {
+function ItemRow({
+  item, waiting, confirming, recording,
+  onRequestConfirm, onCancelConfirm, onConfirm,
+}: {
+  item: MaintenanceItem
+  waiting: boolean
+  confirming: boolean
+  recording: boolean
+  onRequestConfirm: () => void
+  onCancelConfirm: () => void
+  onConfirm: () => void
+}) {
   const due = dueInfo(item)
   const badge =
     due.state === 'overdue' ? { bg: C.redL, fg: C.red } :
@@ -56,6 +67,59 @@ function ItemRow({ item, waiting }: { item: MaintenanceItem; waiting: boolean })
             ⏳ 等待桌面產生任務
           </div>
         )}
+
+        {/* Fallback entry (B-4c): only ever shown for a currently-waiting
+            item, and never as a prominent primary button — small text link. */}
+        {waiting && !confirming && (
+          <button
+            onClick={onRequestConfirm}
+            style={{
+              marginTop:6, background:'none', border:'none', padding:0,
+              fontSize:12, fontWeight:600, color:C.acc, textDecoration:'underline',
+              cursor:'pointer',
+            }}
+          >
+            記錄完成
+          </button>
+        )}
+
+        {waiting && confirming && (
+          <div style={{
+            marginTop:8, padding:'10px 12px', borderRadius:10,
+            background:C.b1, border:`1px solid ${C.b2}`,
+          }}>
+            <p style={{ fontSize:12, color:C.t2, lineHeight:1.5, margin:0, marginBottom:8 }}>
+              記錄後手機無法取消，若要反悔需到桌面復原。確定要記錄「{item.name}」已完成嗎？
+            </p>
+            <div style={{ display:'flex', gap:8 }}>
+              <button
+                onClick={onCancelConfirm}
+                disabled={recording}
+                style={{
+                  flex:1, padding:'7px', borderRadius:8,
+                  border:`1px solid ${C.b2}`, background:'#fff', color:C.t2,
+                  fontSize:13, fontWeight:600,
+                  cursor: recording ? 'not-allowed' : 'pointer',
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={recording}
+                style={{
+                  flex:1, padding:'7px', borderRadius:8, border:'none',
+                  background: recording ? C.b2 : C.acc,
+                  color: recording ? C.t3 : '#fff',
+                  fontSize:13, fontWeight:700,
+                  cursor: recording ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {recording ? '記錄中...' : '確認記錄完成'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <span style={{
         flexShrink:0, fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:99,
@@ -68,10 +132,25 @@ function ItemRow({ item, waiting }: { item: MaintenanceItem; waiting: boolean })
 }
 
 export default function Maintenance() {
-  const { items, loading, error, createMaintenanceItem, isWaitingForTask } = useMaintenanceItems()
-  const [showForm, setShowForm] = useState(false)
+  const {
+    items, loading, error, createMaintenanceItem, isWaitingForTask,
+    recordFallbackCompletion, actionError, actionNotice,
+  } = useMaintenanceItems()
+  const [showForm, setShowForm]         = useState(false)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [recordingId, setRecordingId]   = useState<string | null>(null)
 
   if (loading) return <LoadingScreen />
+
+  // B-4c: confirm → record. `recordFallbackCompletion` itself reloads the
+  // list on success (and on the "advanced but event-log failed" case), so the
+  // new next_due_at / waiting flag reflect immediately without extra code here.
+  const handleConfirmRecord = async (itemId: string) => {
+    setRecordingId(itemId)
+    await recordFallbackCompletion(itemId)
+    setRecordingId(null)
+    setConfirmingId(null)
+  }
 
   return (
     <div style={{ height:'100%', overflowY:'auto', background:C.b1 }}>
@@ -119,10 +198,23 @@ export default function Maintenance() {
           </div>
         )}
 
-        {items.map(item => <ItemRow key={item.id} item={item} waiting={isWaitingForTask(item)} />)}
+        {items.map(item => (
+          <ItemRow
+            key={item.id}
+            item={item}
+            waiting={isWaitingForTask(item)}
+            confirming={confirmingId === item.id}
+            recording={recordingId === item.id}
+            onRequestConfirm={() => setConfirmingId(item.id)}
+            onCancelConfirm={() => setConfirmingId(null)}
+            onConfirm={() => handleConfirmRecord(item.id)}
+          />
+        ))}
       </div>
 
-      {error && <Toast text={error} />}
+      {actionError ? <Toast text={actionError} kind="error" />
+        : actionNotice ? <Toast text={actionNotice} kind="notice" />
+        : error ? <Toast text={error} kind="error" /> : null}
     </div>
   )
 }
@@ -285,16 +377,21 @@ function LoadingScreen() {
   )
 }
 
-// Transient load-failure toast. Not auto-clearing (no polling mutation loop
-// here) — it reflects the hook's current error state directly.
-function Toast({ text }: { text: string }) {
+// Transient toast. 'error' = red (list-load failure or a write that failed);
+// 'notice' = neutral/positive (B-4c fallback-completion success). The plain
+// list-load `error` has no auto-clear timer of its own (it just reflects the
+// hook's current state); actionError/actionNotice auto-clear via the hook.
+function Toast({ text, kind = 'error' }: { text: string; kind?: 'error' | 'notice' }) {
+  const palette = kind === 'error'
+    ? { bg:'#fef2f2', border:'1px solid #fecaca', fg:'#dc2626' }
+    : { bg:'#f0fdf4', border:'1px solid #bbf7d0', fg:'#15803d' }
   return (
     <div style={{
       position:'fixed', left:16, right:16,
       bottom:'calc(72px + env(safe-area-inset-bottom))',
       padding:'12px 16px', borderRadius:14,
-      background:'#fef2f2', border:'1px solid #fecaca',
-      color:'#dc2626', fontSize:14, fontWeight:500, textAlign:'center',
+      background:palette.bg, border:palette.border,
+      color:palette.fg, fontSize:14, fontWeight:500, textAlign:'center',
       boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
     }}>
       {text}
