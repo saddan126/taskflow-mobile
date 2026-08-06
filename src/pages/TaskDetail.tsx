@@ -34,7 +34,7 @@ function grow(el: HTMLTextAreaElement | null) {
 export default function TaskDetail() {
   const { id }  = useParams<{ id: string }>()
   const nav     = useNavigate()
-  const { toggleComplete, updateTaskFields, softDelete, toggleStar, actionError } = useTasks()
+  const { toggleComplete, updateTaskFields, softDelete, toggleStar, actionError, actionNotice } = useTasks()
   const { categories } = useCategories()
 
   const [task, setTask]           = useState<Task | null>(null)
@@ -314,6 +314,10 @@ export default function TaskDetail() {
               }}
             />
 
+            {task.task_type === 'maintenance' && (
+              <span style={{ flexShrink:0, marginTop:4, fontSize:18, lineHeight:1 }}>🌿</span>
+            )}
+
             <button onClick={handleStar}
               style={{ flexShrink:0, marginTop:2, background:'none', border:'none',
                        cursor:'pointer', padding:2, lineHeight:0 }}
@@ -520,7 +524,8 @@ export default function TaskDetail() {
         </button>
       </div>
 
-      {actionError && <Toast text={actionError} />}
+      {actionError ? <Toast text={actionError} kind="error" />
+        : actionNotice ? <Toast text={actionNotice} kind="notice" /> : null}
     </div>
   )
 }
@@ -559,15 +564,20 @@ function Chip({ label, color, dot, active, onClick }: {
   )
 }
 
-// Transient write-failure toast. Auto-clears via useTasks.
-function Toast({ text }: { text: string }) {
+// Transient toast. Auto-clears via useTasks. 'error' = red write-failure
+// (unchanged); 'notice' = neutral/positive, for non-failure messages (B-4b,
+// e.g. a maintenance task completed successfully).
+function Toast({ text, kind = 'error' }: { text: string; kind?: 'error' | 'notice' }) {
+  const palette = kind === 'error'
+    ? { bg:'#fef2f2', border:'1px solid #fecaca', fg:'#dc2626' }
+    : { bg:'#f0fdf4', border:'1px solid #bbf7d0', fg:'#15803d' }
   return (
     <div style={{
       position:'fixed', left:16, right:16,
       bottom:'calc(72px + env(safe-area-inset-bottom))',
       padding:'12px 16px', borderRadius:14,
-      background:'#fef2f2', border:'1px solid #fecaca',
-      color:'#dc2626', fontSize:14, fontWeight:500, textAlign:'center',
+      background:palette.bg, border:palette.border,
+      color:palette.fg, fontSize:14, fontWeight:500, textAlign:'center',
       boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
     }}>
       {text}

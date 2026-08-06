@@ -83,6 +83,7 @@ function TaskRow({ task, onToggle, onTap, onToggleStar, onDelete, isBlocked, cat
             <span style={{ width:7, height:7, borderRadius:'50%', background:categoryColor, flexShrink:0 }} />
           )}
           {isBlocked && !done && <span style={{ fontSize:13 }}>🔒</span>}
+          {task.task_type === 'maintenance' && <span style={{ fontSize:13 }}>🌿</span>}
           {task.title}
         </div>
         {due && (
@@ -159,7 +160,7 @@ function Section({ label, accent, tasks, onToggle, onTap, onToggleStar, onDelete
 
 export default function Focus() {
   const nav = useNavigate()
-  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError, refresh } = useTasks()
+  const { overdue, dueToday, upcoming, pending, blockedIds, toggleComplete, toggleStar, softDelete, restoreTask, loading, actionError, actionNotice, refresh } = useTasks()
   const { categories } = useCategories()
   const catMap = new Map(categories.map(c => [c.id, c]))
   const undo = useUndoTask()
@@ -215,7 +216,8 @@ export default function Focus() {
       {undo && (
         <UndoToast onUndo={() => { const t = undo; setUndoTask(null); void restoreTask(t) }} />
       )}
-      {actionError && <Toast text={actionError} />}
+      {actionError ? <Toast text={actionError} kind="error" />
+        : actionNotice ? <Toast text={actionNotice} kind="notice" /> : null}
     </div>
   )
 }
@@ -243,15 +245,20 @@ function UndoToast({ onUndo }: { onUndo: () => void }) {
   )
 }
 
-// Transient write-failure toast, floats above the bottom nav. Auto-clears via useTasks.
-function Toast({ text }: { text: string }) {
+// Transient toast, floats above the bottom nav. Auto-clears via useTasks.
+// 'error' = red write-failure (unchanged); 'notice' = neutral/positive, for
+// non-failure messages (B-4b, e.g. a maintenance task completed successfully).
+function Toast({ text, kind = 'error' }: { text: string; kind?: 'error' | 'notice' }) {
+  const palette = kind === 'error'
+    ? { bg:'#fef2f2', border:'1px solid #fecaca', fg:'#dc2626' }
+    : { bg:'#f0fdf4', border:'1px solid #bbf7d0', fg:'#15803d' }
   return (
     <div style={{
       position:'fixed', left:16, right:16,
       bottom:'calc(72px + env(safe-area-inset-bottom))',
       padding:'12px 16px', borderRadius:14,
-      background:'#fef2f2', border:'1px solid #fecaca',
-      color:'#dc2626', fontSize:14, fontWeight:500, textAlign:'center',
+      background:palette.bg, border:palette.border,
+      color:palette.fg, fontSize:14, fontWeight:500, textAlign:'center',
       boxShadow:'0 4px 20px rgba(0,0,0,.12)', zIndex:50,
     }}>
       {text}

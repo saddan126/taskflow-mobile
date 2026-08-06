@@ -19,6 +19,10 @@ export function calcNextDueAt(lastHandledAt: string, cycleValue: number, cycleUn
 // 讀取仍為唯讀（見下方 load）；write 只有這一個 insert 入口。
 export function useMaintenanceItems() {
   const [items, setItems]     = useState<MaintenanceItem[]>([])
+  // Read-only (B-4b): `${maintenance_item_id}|${due_date}` for every open
+  // (not completed, not deleted) maintenance task. Lets the page show "等待
+  // 桌面產生任務" for an item whose current round has no matching task yet.
+  const [openTaskKeys, setOpenTaskKeys] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
@@ -26,14 +30,29 @@ export function useMaintenanceItems() {
     setLoading(true)
     setError(null)
     try {
-      const { data, error: err } = await supabase
-        .from('maintenance_items')
-        .select('*')
-        .is('deleted_at', null)
-        .eq('is_active', 1)
-        .order('next_due_at')
+      const [{ data, error: err }, taskRes] = await Promise.all([
+        supabase
+          .from('maintenance_items')
+          .select('*')
+          .is('deleted_at', null)
+          .eq('is_active', 1)
+          .order('next_due_at'),
+        supabase
+          .from('tasks')
+          .select('maintenance_item_id, due_date')
+          .eq('task_type', 'maintenance')
+          .eq('completed', 0)
+          .is('deleted_at', null),
+      ])
       if (err) throw err
       setItems((data ?? []) as MaintenanceItem[])
+      // Best-effort: a failure here never blocks the item list itself (same
+      // "supplementary query defaults to empty" convention as useTasks' deps).
+      const keys = new Set<string>()
+      for (const t of taskRes.data ?? []) {
+        if (t.maintenance_item_id && t.due_date) keys.add(`${t.maintenance_item_id}|${t.due_date}`)
+      }
+      setOpenTaskKeys(keys)
     } catch (e: any) {
       setError(
         (await hasValidSession())
@@ -46,6 +65,12 @@ export function useMaintenanceItems() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Whether this item's current round (next_due_at) has no matching open task
+  // yet — i.e. desktop hasn't generated it. Null next_due_at has no "round" to
+  // wait for, so it's never flagged.
+  const isWaitingForTask = (item: MaintenanceItem): boolean =>
+    !!item.next_due_at && !openTaskKeys.has(`${item.id}|${item.next_due_at}`)
 
   // Create a maintenance item. Requires a valid session (never fakes success
   // offline / logged-out), optimistic-inserts into the sorted list, and rolls
@@ -98,5 +123,5 @@ export function useMaintenanceItems() {
     }
   }
 
-  return { items, loading, error, reload: load, createMaintenanceItem }
+  return { items, loading, error, reload: load, createMaintenanceItem, isWaitingForTask }
 }

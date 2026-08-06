@@ -27,7 +27,7 @@ function dueInfo(item: MaintenanceItem): { text: string; state: DueState } {
   return { text: `${n} 天後到期`, state: 'normal' }
 }
 
-function ItemRow({ item }: { item: MaintenanceItem }) {
+function ItemRow({ item, waiting }: { item: MaintenanceItem; waiting: boolean }) {
   const due = dueInfo(item)
   const badge =
     due.state === 'overdue' ? { bg: C.redL, fg: C.red } :
@@ -51,6 +51,11 @@ function ItemRow({ item }: { item: MaintenanceItem }) {
         <div style={{ fontSize:13, color:C.t3, marginTop:2 }}>
           {item.next_due_at ?? '尚未排定'}
         </div>
+        {waiting && (
+          <div style={{ fontSize:12, color:C.t3, marginTop:4 }}>
+            ⏳ 等待桌面產生任務
+          </div>
+        )}
       </div>
       <span style={{
         flexShrink:0, fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:99,
@@ -63,7 +68,7 @@ function ItemRow({ item }: { item: MaintenanceItem }) {
 }
 
 export default function Maintenance() {
-  const { items, loading, error, createMaintenanceItem } = useMaintenanceItems()
+  const { items, loading, error, createMaintenanceItem, isWaitingForTask } = useMaintenanceItems()
   const [showForm, setShowForm] = useState(false)
 
   if (loading) return <LoadingScreen />
@@ -114,7 +119,7 @@ export default function Maintenance() {
           </div>
         )}
 
-        {items.map(item => <ItemRow key={item.id} item={item} />)}
+        {items.map(item => <ItemRow key={item.id} item={item} waiting={isWaitingForTask(item)} />)}
       </div>
 
       {error && <Toast text={error} />}
@@ -140,8 +145,11 @@ function AddItemForm({
   const [saved, setSaved]               = useState(false)
   const [error, setError]               = useState<string | null>(null)
 
-  const cycleNum = parseInt(cycleValue, 10)
-  const valid = name.trim() !== '' && Number.isFinite(cycleNum) && cycleNum >= 1 && !!lastHandledAt
+  // Strict positive integer — no silent truncation of "1.5" etc. (B-4b).
+  const cycleTrimmed = cycleValue.trim()
+  const cycleValid = /^[1-9]\d*$/.test(cycleTrimmed)
+  const cycleNum = cycleValid ? Number(cycleTrimmed) : NaN
+  const valid = name.trim() !== '' && cycleValid && !!lastHandledAt
 
   const handleSubmit = async () => {
     if (!valid || saving) return
@@ -209,6 +217,11 @@ function AddItemForm({
             {CYCLE_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
           </select>
         </div>
+        {cycleTrimmed !== '' && !cycleValid && (
+          <div style={{ fontSize:12, color:C.red, marginTop:6 }}>
+            週期需為正整數（不可為小數或非數字）
+          </div>
+        )}
       </div>
 
       <div>

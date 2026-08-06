@@ -97,6 +97,11 @@ export function useTasks(categoryId?: string) {
   const [error,   setError]   = useState<string | null>(null)
   // Transient toast for write failures (offline / network). Auto-clears.
   const [actionError, setActionError] = useState<string | null>(null)
+  // Transient toast for non-failure notices (Phase 1.5-B, B-4b) — e.g. a
+  // maintenance completion that succeeded, or completed without advancing the
+  // cycle. Kept separate from actionError so pages can style it neutrally
+  // instead of as a red error. Auto-clears the same way.
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   // `silent` skips the page-level loading flag (used by pull-to-refresh, which
   // shows its own indicator and keeps the list visible). A silent failure also
@@ -144,6 +149,13 @@ export function useTasks(categoryId?: string) {
     const t = setTimeout(() => setActionError(null), 3500)
     return () => clearTimeout(t)
   }, [actionError])
+
+  // Auto-dismiss the neutral notice toast the same way.
+  useEffect(() => {
+    if (!actionNotice) return
+    const t = setTimeout(() => setActionNotice(null), 3500)
+    return () => clearTimeout(t)
+  }, [actionNotice])
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -229,8 +241,9 @@ export function useTasks(categoryId?: string) {
     }
 
     if (!isCurrentRound) {
-      // Completed, but not this round — never advance the cycle for it.
-      setActionError('這筆不是目前這一輪，已標記完成但未推進週期')
+      // Completed, but not this round — never advance the cycle for it. Not a
+      // failure, so this goes through the neutral notice channel (B-4b).
+      setActionNotice('這筆不是目前這一輪，已標記完成但未推進週期')
       return true
     }
 
@@ -288,7 +301,8 @@ export function useTasks(categoryId?: string) {
       return true
     }
 
-    setActionError('已完成並推進週期，下一輪任務會在桌面同步後產生')
+    // Full success (B-4b: routed through the neutral notice, not the error toast).
+    setActionNotice('已完成並推進週期，下一輪任務會在桌面同步後產生')
     return true
   }
 
@@ -373,7 +387,14 @@ export function useTasks(categoryId?: string) {
   // Soft-delete: write deleted_at so the row is hidden everywhere (queries filter
   // deleted_at IS NULL) but stays recoverable. Only writes deleted_at (+ updated_at).
   // On success, arms the undo store; on failure, reloads true state and toasts.
+  // Maintenance tasks (Phase 1.5-B, B-4b) are refused outright — checked here,
+  // the single place every delete entry point (long-press in Tasks/Focus, the
+  // detail-page delete button) already routes through, so nothing writes.
   const softDelete = async (task: Task): Promise<boolean> => {
+    if (task.task_type === 'maintenance') {
+      setActionError('更替任務由系統產生，請到桌面刪除對應的更替項目')
+      return false
+    }
     const now = new Date().toISOString()
     setTasks(p => p.filter(t => t.id !== task.id))   // optimistic remove
     try {
@@ -444,7 +465,7 @@ export function useTasks(categoryId?: string) {
     overdue, dueToday, upcoming,
     toggleComplete, createTask, updateTaskFields,
     toggleStar, softDelete, restoreTask,
-    actionError,
+    actionError, actionNotice,
     reload: load,
     refresh: () => load({ silent: true }),
   }
